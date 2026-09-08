@@ -42,25 +42,36 @@ function setWorking(value) {
   if ($('task-progress')) $('task-progress').hidden = !value;
 }
 
-// Draw vector polygon outlines on canvas
+// Draw vector polygon outlines and point markers on canvas
 function drawVectorOverlay(ctx, width, height, geojson) {
   if (!geojson || !geojson.features || !geojson.features.length) return;
   const bbox = geojson.bbox || [0, 0, width, height];
   const minX = bbox[0], minY = bbox[1], maxX = bbox[2], maxY = bbox[3];
-  const rangeX = maxX - minX || 1, rangeY = maxY - minY || 1;
+  const diffX = maxX - minX;
+  const diffY = maxY - minY;
+  const rangeX = diffX > 1e-9 ? diffX : 1;
+  const rangeY = diffY > 1e-9 ? diffY : 1;
+  const pad = 40;
+  const availW = Math.max(10, width - pad * 2);
+  const availH = Math.max(10, height - pad * 2);
 
   ctx.strokeStyle = '#06b6d4';
   ctx.fillStyle = 'rgba(6, 182, 212, 0.25)';
   ctx.lineWidth = 2;
 
+  const mapX = x => diffX > 1e-9 ? (x - minX) / rangeX * availW + pad : width / 2;
+  const mapY = y => diffY > 1e-9 ? (maxY - y) / rangeY * availH + pad : height / 2;
+
   for (const feat of geojson.features) {
-    if (feat.geometry && feat.geometry.type === 'Polygon') {
+    if (!feat.geometry) continue;
+    const gtype = feat.geometry.type;
+
+    if (gtype === 'Polygon') {
       for (const ring of feat.geometry.coordinates) {
         ctx.beginPath();
         for (let i = 0; i < ring.length; i++) {
-          const pt = ring[i];
-          const px = (pt[0] - minX) / rangeX * width;
-          const py = (maxY - pt[1]) / rangeY * height;
+          const px = mapX(ring[i][0]);
+          const py = mapY(ring[i][1]);
           if (i === 0) ctx.moveTo(px, py);
           else ctx.lineTo(px, py);
         }
@@ -68,6 +79,30 @@ function drawVectorOverlay(ctx, width, height, geojson) {
         ctx.stroke();
         ctx.fill();
       }
+    } else if (gtype === 'LineString') {
+      ctx.beginPath();
+      for (let i = 0; i < feat.geometry.coordinates.length; i++) {
+        const px = mapX(feat.geometry.coordinates[i][0]);
+        const py = mapY(feat.geometry.coordinates[i][1]);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    } else if (gtype === 'Point') {
+      const px = mapX(feat.geometry.coordinates[0]);
+      const py = mapY(feat.geometry.coordinates[1]);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(px, py, 7, 0, 2 * Math.PI);
+      ctx.fillStyle = '#06b6d4';
+      ctx.shadowColor = '#06b6d4';
+      ctx.shadowBlur = 12;
+      ctx.fill();
+      ctx.strokeStyle = '#e0f2fe';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
     }
   }
 }
@@ -120,10 +155,80 @@ function renderStandaloneVector(geojson) {
   if ($('viewport-empty')) $('viewport-empty').hidden = true;
 }
 
+let leafletInstance = null;
+let leafletGeoJsonLayer = null;
+
+function renderLeafletMap(geojson) {
+  const container = $('leaflet-map');
+  const canvas = $('viewport-canvas');
+  if (!container) return;
+
+  if (canvas) canvas.hidden = true;
+  container.hidden = false;
+  if ($('viewport-empty')) $('viewport-empty').hidden = true;
+
+  if (typeof L === 'undefined') {
+    statusMessage('Biblioteca Leaflet não disponível (modo offline). Usando canvas.', true);
+    if (canvas) canvas.hidden = false;
+    container.hidden = true;
+    renderStandaloneVector(geojson);
+    return;
+  }
+
+  if (!leafletInstance) {
+    leafletInstance = L.map('leaflet-map').setView([0, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(leafletInstance);
+  }
+
+  if (leafletGeoJsonLayer) {
+    leafletInstance.removeLayer(leafletGeoJsonLayer);
+    leafletGeoJsonLayer = null;
+  }
+
+  if (geojson && geojson.features && geojson.features.length) {
+    leafletGeoJsonLayer = L.geoJSON(geojson, {
+      style: { color: '#06b6d4', weight: 3, opacity: 0.9, fillColor: '#06b6d4', fillOpacity: 0.3 },
+      pointToLayer: (feat, latlng) => L.circleMarker(latlng, {
+        radius: 8, fillColor: '#06b6d4', color: '#ffffff', weight: 2, opacity: 1, fillOpacity: 0.9
+      }),
+      onEachFeature: (feat, layer) => {
+        const type = feat.geometry ? feat.geometry.type : 'Feature';
+        layer.bindPopup(`<strong>Geometria Vetorial</strong><br>Tipo: ${type}`);
+      }
+    }).addTo(leafletInstance);
+
+    setTimeout(() => {
+      leafletInstance.invalidateSize();
+      try {
+        if (leafletGeoJsonLayer.getBounds().isValid()) {
+          leafletInstance.fitBounds(leafletGeoJsonLayer.getBounds(), { padding: [30, 30] });
+        }
+      } catch {}
+    }, 100);
+  }
+}
+
 async function updateView(mode) {
   currentViewMode = mode;
   document.querySelectorAll('.v-btn').forEach(b => b.classList.remove('active'));
   if ($('v-' + mode)) $('v-' + mode).classList.add('active');
+
+  const container = $('leaflet-map');
+  const canvas = $('viewport-canvas');
+
+  if (mode === 'leaflet') {
+    if (!currentGeoJSON) {
+      statusMessage('Carregue um arquivo vetorial para visualizar no mapa Leaflet.', true);
+      return;
+    }
+    renderLeafletMap(currentGeoJSON);
+    statusMessage('Exibindo mapa cartográfico interativo Leaflet.');
+    return;
+  }
+
+  if (container) container.hidden = true;
 
   if (mode === 'vector' && currentGeoJSON && !currentJob) {
     renderStandaloneVector(currentGeoJSON);
@@ -391,6 +496,7 @@ if ($('toggle-sidebar-btn')) {
 if ($('v-map')) $('v-map').onclick = () => updateView('map');
 if ($('v-original')) $('v-original').onclick = () => updateView('original');
 if ($('v-vector')) $('v-vector').onclick = () => updateView('vector');
+if ($('v-leaflet')) $('v-leaflet').onclick = () => updateView('leaflet');
 if ($('v-clipped')) $('v-clipped').onclick = () => updateView('clipped');
 
 if ($('vector-file')) $('vector-file').onchange = () => handleVectorUpload($('vector-file').files[0]);

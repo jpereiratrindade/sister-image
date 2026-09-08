@@ -140,27 +140,52 @@ bool VectorShape::contains(double x, double y) const {
 nlohmann::json VectorShape::to_geojson() const {
     nlohmann::json features = nlohmann::json::array();
     for (const auto& poly : polygons) {
-        nlohmann::json rings = nlohmann::json::array();
-        nlohmann::json outer = nlohmann::json::array();
-        for (const auto& p : poly.outer_ring) {
-            outer.push_back({p.x, p.y});
-        }
-        rings.push_back(outer);
-        for (const auto& hole : poly.inner_rings) {
-            nlohmann::json h = nlohmann::json::array();
-            for (const auto& p : hole) {
-                h.push_back({p.x, p.y});
+        if (poly.outer_ring.empty()) continue;
+        if (poly.outer_ring.size() == 1) {
+            features.push_back({
+                {"type", "Feature"},
+                {"geometry", {
+                    {"type", "Point"},
+                    {"coordinates", {poly.outer_ring[0].x, poly.outer_ring[0].y}}
+                }},
+                {"properties", nlohmann::json::object()}
+            });
+        } else if (poly.outer_ring.size() == 2) {
+            nlohmann::json line = nlohmann::json::array();
+            for (const auto& p : poly.outer_ring) {
+                line.push_back({p.x, p.y});
             }
-            rings.push_back(h);
+            features.push_back({
+                {"type", "Feature"},
+                {"geometry", {
+                    {"type", "LineString"},
+                    {"coordinates", line}
+                }},
+                {"properties", nlohmann::json::object()}
+            });
+        } else {
+            nlohmann::json rings = nlohmann::json::array();
+            nlohmann::json outer = nlohmann::json::array();
+            for (const auto& p : poly.outer_ring) {
+                outer.push_back({p.x, p.y});
+            }
+            rings.push_back(outer);
+            for (const auto& hole : poly.inner_rings) {
+                nlohmann::json h = nlohmann::json::array();
+                for (const auto& p : hole) {
+                    h.push_back({p.x, p.y});
+                }
+                rings.push_back(h);
+            }
+            features.push_back({
+                {"type", "Feature"},
+                {"geometry", {
+                    {"type", "Polygon"},
+                    {"coordinates", rings}
+                }},
+                {"properties", nlohmann::json::object()}
+            });
         }
-        features.push_back({
-            {"type", "Feature"},
-            {"geometry", {
-                {"type", "Polygon"},
-                {"coordinates", rings}
-            }},
-            {"properties", nlohmann::json::object()}
-        });
     }
     return {
         {"type", "FeatureCollection"},
@@ -171,19 +196,31 @@ nlohmann::json VectorShape::to_geojson() const {
 
 nlohmann::json VectorShape::to_metrics_json() const {
     std::size_t total_points = 0;
+    std::size_t poly_count = 0;
+    std::size_t pt_count = 0;
+    std::size_t line_count = 0;
     double total_area = 0.0;
     double total_perimeter = 0.0;
 
     for (const auto& poly : polygons) {
-        total_points += poly.outer_ring.size();
+        std::size_t sz = poly.outer_ring.size();
+        total_points += sz;
         for (const auto& hole : poly.inner_rings) total_points += hole.size();
+
+        if (sz == 1) pt_count++;
+        else if (sz == 2) line_count++;
+        else poly_count++;
+
         total_area += poly.area();
         total_perimeter += poly.perimeter();
     }
 
     return {
         {"name", name},
-        {"polygons_count", polygons.size()},
+        {"polygons_count", poly_count},
+        {"points_count", pt_count},
+        {"lines_count", line_count},
+        {"total_features", polygons.size()},
         {"total_points", total_points},
         {"bbox", {min_x, min_y, max_x, max_y}},
         {"centroid", {(min_x + max_x) / 2.0, (min_y + max_y) / 2.0}},
@@ -194,41 +231,94 @@ nlohmann::json VectorShape::to_metrics_json() const {
 
 VectorShape VectorShape::parse_geojson(const nlohmann::json& j) {
     VectorShape shape;
-    auto parse_poly = [](const nlohmann::json& coords) {
-        Polygon2D poly;
-        if (coords.is_array() && !coords.empty()) {
-            for (std::size_t r = 0; r < coords.size(); ++r) {
-                std::vector<Point2D> ring;
-                for (const auto& pt : coords[r]) {
+
+    auto add_poly = [&shape](Polygon2D&& poly) {
+        poly.compute_bounds();
+        shape.polygons.push_back(std::move(poly));
+    };
+
+    auto parse_feature_geom = [&](const nlohmann::json& geom) {
+        if (!geom.is_object() || !geom.contains("type") || !geom.contains("coordinates")) return;
+        std::string gtype = geom["type"];
+        const auto& coords = geom["coordinates"];
+
+        if (gtype == "Point") {
+            if (coords.is_array() && coords.size() >= 2) {
+                Polygon2D p;
+                p.outer_ring.push_back({coords[0].get<double>(), coords[1].get<double>()});
+                add_poly(std::move(p));
+            }
+        } else if (gtype == "MultiPoint" || gtype == "LineString") {
+            if (coords.is_array()) {
+                Polygon2D p;
+                for (const auto& pt : coords) {
                     if (pt.is_array() && pt.size() >= 2) {
-                        ring.push_back({pt[0].get<double>(), pt[1].get<double>()});
+                        p.outer_ring.push_back({pt[0].get<double>(), pt[1].get<double>()});
                     }
                 }
-                if (r == 0) poly.outer_ring = std::move(ring);
-                else poly.inner_rings.push_back(std::move(ring));
+                if (!p.outer_ring.empty()) add_poly(std::move(p));
+            }
+        } else if (gtype == "MultiLineString") {
+            if (coords.is_array()) {
+                for (const auto& line : coords) {
+                    if (line.is_array()) {
+                        Polygon2D p;
+                        for (const auto& pt : line) {
+                            if (pt.is_array() && pt.size() >= 2) {
+                                p.outer_ring.push_back({pt[0].get<double>(), pt[1].get<double>()});
+                            }
+                        }
+                        if (!p.outer_ring.empty()) add_poly(std::move(p));
+                    }
+                }
+            }
+        } else if (gtype == "Polygon") {
+            if (coords.is_array() && !coords.empty()) {
+                Polygon2D poly;
+                for (std::size_t r = 0; r < coords.size(); ++r) {
+                    std::vector<Point2D> ring;
+                    for (const auto& pt : coords[r]) {
+                        if (pt.is_array() && pt.size() >= 2) {
+                            ring.push_back({pt[0].get<double>(), pt[1].get<double>()});
+                        }
+                    }
+                    if (r == 0) poly.outer_ring = std::move(ring);
+                    else poly.inner_rings.push_back(std::move(ring));
+                }
+                add_poly(std::move(poly));
+            }
+        } else if (gtype == "MultiPolygon") {
+            if (coords.is_array()) {
+                for (const auto& poly_coords : coords) {
+                    if (poly_coords.is_array()) {
+                        Polygon2D poly;
+                        for (std::size_t r = 0; r < poly_coords.size(); ++r) {
+                            std::vector<Point2D> ring;
+                            for (const auto& pt : poly_coords[r]) {
+                                if (pt.is_array() && pt.size() >= 2) {
+                                    ring.push_back({pt[0].get<double>(), pt[1].get<double>()});
+                                }
+                            }
+                            if (r == 0) poly.outer_ring = std::move(ring);
+                            else poly.inner_rings.push_back(std::move(ring));
+                        }
+                        add_poly(std::move(poly));
+                    }
+                }
             }
         }
-        poly.compute_bounds();
-        return poly;
     };
 
     if (j.contains("type")) {
         std::string type = j["type"];
         if (type == "FeatureCollection" && j.contains("features")) {
             for (const auto& feat : j["features"]) {
-                if (feat.contains("geometry")) {
-                    std::string gtype = feat["geometry"].value("type", "");
-                    if (gtype == "Polygon") {
-                        shape.polygons.push_back(parse_poly(feat["geometry"]["coordinates"]));
-                    }
-                }
+                if (feat.contains("geometry")) parse_feature_geom(feat["geometry"]);
             }
         } else if (type == "Feature" && j.contains("geometry")) {
-            if (j["geometry"].value("type", "") == "Polygon") {
-                shape.polygons.push_back(parse_poly(j["geometry"]["coordinates"]));
-            }
-        } else if (type == "Polygon" && j.contains("coordinates")) {
-            shape.polygons.push_back(parse_poly(j["coordinates"]));
+            parse_feature_geom(j["geometry"]);
+        } else {
+            parse_feature_geom(j);
         }
     }
     shape.compute_bounds();
@@ -258,7 +348,16 @@ VectorShape VectorShape::parse_shp(const std::filesystem::path& path) {
         if (!file.read(record.data(), content_length)) break;
 
         int32_t shape_type = read_int32_le(record.data());
-        if (shape_type == 5 || shape_type == 3) { // Polygon (5) or PolyLine (3)
+        if (shape_type == 1) { // Point
+            if (content_length >= 20) {
+                double px = read_double_le(record.data() + 4);
+                double py = read_double_le(record.data() + 12);
+                Polygon2D poly;
+                poly.outer_ring.push_back({px, py});
+                poly.compute_bounds();
+                shape.polygons.push_back(std::move(poly));
+            }
+        } else if (shape_type == 5 || shape_type == 3) { // Polygon (5) or PolyLine (3)
             if (content_length < 44) continue;
             int32_t num_parts = read_int32_le(record.data() + 36);
             int32_t num_points = read_int32_le(record.data() + 40);
@@ -291,6 +390,36 @@ VectorShape VectorShape::parse_shp(const std::filesystem::path& path) {
     return shape;
 }
 
+static std::vector<Point2D> parse_kml_coords_str(const std::string& raw) {
+    std::vector<Point2D> pts;
+    std::vector<double> nums;
+    std::string current;
+    for (char c : raw) {
+        if ((c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E') {
+            current += c;
+        } else {
+            if (!current.empty()) {
+                try { nums.push_back(std::stod(current)); } catch (...) {}
+                current.clear();
+            }
+        }
+    }
+    if (!current.empty()) {
+        try { nums.push_back(std::stod(current)); } catch (...) {}
+    }
+
+    if (nums.size() >= 3 && nums.size() % 3 == 0) {
+        for (std::size_t i = 0; i + 2 < nums.size(); i += 3) {
+            pts.push_back({nums[i], nums[i + 1]});
+        }
+    } else if (nums.size() >= 2) {
+        for (std::size_t i = 0; i + 1 < nums.size(); i += 2) {
+            pts.push_back({nums[i], nums[i + 1]});
+        }
+    }
+    return pts;
+}
+
 VectorShape VectorShape::parse_kml(const std::filesystem::path& path) {
     std::ifstream file(path);
     if (!file) throw std::runtime_error("Falha ao abrir KML: " + path.string());
@@ -312,21 +441,9 @@ VectorShape VectorShape::parse_kml(const std::filesystem::path& path) {
         if (end_pos == std::string::npos) break;
 
         std::string coords_str = content.substr(pos, end_pos - pos);
-        std::stringstream ss(coords_str);
-        std::string tuple;
         Polygon2D poly;
+        poly.outer_ring = parse_kml_coords_str(coords_str);
 
-        while (ss >> tuple) {
-            std::size_t c1 = tuple.find(',');
-            if (c1 != std::string::npos) {
-                double lon = std::stod(tuple.substr(0, c1));
-                std::size_t c2 = tuple.find(',', c1 + 1);
-                double lat = (c2 != std::string::npos) ?
-                    std::stod(tuple.substr(c1 + 1, c2 - c1 - 1)) :
-                    std::stod(tuple.substr(c1 + 1));
-                poly.outer_ring.push_back({lon, lat});
-            }
-        }
         if (!poly.outer_ring.empty()) {
             poly.compute_bounds();
             shape.polygons.push_back(std::move(poly));
@@ -356,21 +473,9 @@ VectorShape VectorShape::parse_kmz_or_zip(const std::filesystem::path& path) {
             if (end_pos == std::string::npos) break;
 
             std::string coords_str = content.substr(pos, end_pos - pos);
-            std::stringstream ss(coords_str);
-            std::string tuple;
             Polygon2D poly;
+            poly.outer_ring = parse_kml_coords_str(coords_str);
 
-            while (ss >> tuple) {
-                std::size_t c1 = tuple.find(',');
-                if (c1 != std::string::npos) {
-                    double lon = std::stod(tuple.substr(0, c1));
-                    std::size_t c2 = tuple.find(',', c1 + 1);
-                    double lat = (c2 != std::string::npos) ?
-                        std::stod(tuple.substr(c1 + 1, c2 - c1 - 1)) :
-                        std::stod(tuple.substr(c1 + 1));
-                    poly.outer_ring.push_back({lon, lat});
-                }
-            }
             if (!poly.outer_ring.empty()) {
                 poly.compute_bounds();
                 shape.polygons.push_back(std::move(poly));
@@ -394,6 +499,30 @@ VectorShape VectorShape::parse_file(const std::filesystem::path& path) {
         std::ifstream f(path);
         return parse_geojson(nlohmann::json::parse(f));
     }
+
+    // Automatic format detection for temporary uploads or unknown file extensions (.tmp)
+    try {
+        VectorShape shape = parse_kml(path);
+        if (!shape.polygons.empty()) return shape;
+    } catch (...) {}
+
+    try {
+        VectorShape shape = parse_kmz_or_zip(path);
+        if (!shape.polygons.empty()) return shape;
+    } catch (...) {}
+
+    try {
+        std::ifstream f(path);
+        nlohmann::json j = nlohmann::json::parse(f);
+        VectorShape shape = parse_geojson(j);
+        if (!shape.polygons.empty()) return shape;
+    } catch (...) {}
+
+    try {
+        VectorShape shape = parse_shp(path);
+        if (!shape.polygons.empty()) return shape;
+    } catch (...) {}
+
     throw std::runtime_error("Formato vetorial nao suportado: " + ext);
 }
 

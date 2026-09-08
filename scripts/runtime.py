@@ -102,8 +102,9 @@ def stop():
     print('stopped')
 
 def start():
-    if running():
-        print('running')
+    pid = running()
+    if pid:
+        print(f'running pid={pid} http://{address}:{port}')
         return
     if not binary.is_file():
         raise RuntimeError('Artefato ausente; compile ou qualifique antes de start')
