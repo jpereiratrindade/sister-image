@@ -19,8 +19,9 @@ namespace {
 constexpr std::uint32_t kModelPixelScaleTag = 33550;
 constexpr std::uint32_t kModelTiepointTag = 33922;
 constexpr std::uint32_t kGeoKeyDirectoryTag = 34735;
+}
 
-static void latlon_to_utm(double lat, double lon, double& easting, double& northing, int zone = 22, bool southern = true) {
+void latlon_to_utm(double lat, double lon, double& easting, double& northing, int zone, bool southern) {
     constexpr double a = 6378137.0;
     constexpr double f = 1.0 / 298.257223563;
     constexpr double k0 = 0.9996;
@@ -55,6 +56,54 @@ static void latlon_to_utm(double lat, double lon, double& easting, double& north
         northing += 10000000.0;
     }
 }
+
+void utm_to_latlon(double easting, double northing, double& lat, double& lon, int zone, bool southern) {
+    constexpr double a = 6378137.0;
+    constexpr double f = 1.0 / 298.257223563;
+    constexpr double b = a * (1.0 - f);
+    double e = std::sqrt(1.0 - (b / a) * (b / a));
+    double e_prime_sq = (e * e) / (1.0 - e * e);
+    constexpr double k0 = 0.9996;
+
+    double x = easting - 500000.0;
+    double y = northing;
+    if (southern) {
+        y -= 10000000.0;
+    }
+
+    double m = y / k0;
+    double mu = m / (a * (1.0 - e*e/4.0 - 3.0*e*e*e*e/64.0 - 5.0*e*e*e*e*e*e/256.0));
+    double e1 = (1.0 - std::sqrt(1.0 - e*e)) / (1.0 + std::sqrt(1.0 - e*e));
+
+    double j1 = (3.0*e1/2.0 - 27.0*e1*e1*e1/32.0);
+    double j2 = (21.0*e1*e1/16.0 - 55.0*e1*e1*e1*e1/32.0);
+    double j3 = (151.0*e1*e1*e1/96.0);
+    double j4 = (1097.0*e1*e1*e1*e1/512.0);
+
+    double fp = mu + j1*std::sin(2.0*mu) + j2*std::sin(4.0*mu) + j3*std::sin(6.0*mu) + j4*std::sin(8.0*mu);
+
+    double c1 = e_prime_sq * std::pow(std::cos(fp), 2);
+    double t1 = std::pow(std::tan(fp), 2);
+    double r1 = a * (1.0 - e*e) / std::pow(1.0 - e*e * std::pow(std::sin(fp), 2), 1.5);
+    double n1 = a / std::sqrt(1.0 - e*e * std::pow(std::sin(fp), 2));
+    double d = x / (n1 * k0);
+
+    double fact1 = n1 * std::tan(fp) / r1;
+    double fact2 = d*d / 2.0;
+    double fact3 = (5.0 + 3.0*t1 + 10.0*c1 - 4.0*c1*c1 - 9.0*e_prime_sq) * std::pow(d, 4) / 24.0;
+    double fact4 = (61.0 + 90.0*t1 + 298.0*c1 + 45.0*t1*t1 - 252.0*e_prime_sq - 3.0*c1*c1) * std::pow(d, 6) / 720.0;
+
+    double lat_rad = fp - fact1 * (fact2 - fact3 + fact4);
+
+    double fact5 = d;
+    double fact6 = (1.0 + 2.0*t1 + c1) * std::pow(d, 3) / 6.0;
+    double fact7 = (5.0 - 2.0*c1 + 28.0*t1 - 3.0*c1*c1 + 8.0*e_prime_sq + 24.0*t1*t1) * std::pow(d, 5) / 120.0;
+
+    double lon_diff = (fact5 - fact6 + fact7) / std::cos(fp);
+
+    double central_meridian = (zone - 1) * 6.0 - 180.0 + 3.0;
+    lon = central_meridian + lon_diff * 180.0 / M_PI;
+    lat = lat_rad * 180.0 / M_PI;
 }
 
 nlohmann::json ClipResult::to_json() const {

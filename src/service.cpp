@@ -1,5 +1,6 @@
 #include "service.hpp"
 #include "sister_image/RasterWindowAnalysis.hpp"
+#include "sister_image/raster_clip.hpp"
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <tiffio.h>
@@ -232,7 +233,28 @@ Json inspect_raster(const std::filesystem::path& path) {
     if (has_scale) { scale[0] = scale_ptr[0]; scale[1] = scale_ptr[1]; }
     if (has_tie) { tie[3] = tie_ptr[3]; tie[4] = tie_ptr[4]; }
 
-    return {
+    int zone = 22;
+    bool southern = true;
+    uint16_t key_count = 0;
+    uint16_t* key_ptr = nullptr;
+    if (TIFFGetField(tif.get(), 34735, &key_count, &key_ptr) == 1 && key_ptr && key_count >= 4) {
+        uint16_t num_keys = key_ptr[3];
+        for (uint16_t i = 0; i < num_keys && (4 + i * 4 + 3) < key_count; ++i) {
+            uint16_t key_id = key_ptr[4 + i * 4];
+            uint16_t val = key_ptr[4 + i * 4 + 3];
+            if (key_id == 3072) {
+                if (val >= 32701 && val <= 32760) {
+                    zone = val - 32700;
+                    southern = true;
+                } else if (val >= 32601 && val <= 32660) {
+                    zone = val - 32600;
+                    southern = false;
+                }
+            }
+        }
+    }
+
+    Json res = {
         {"width", width},
         {"height", height},
         {"channels", spp},
@@ -243,8 +265,36 @@ Json inspect_raster(const std::filesystem::path& path) {
         {"scale_y", scale[1]},
         {"tie_x", tie[3]},
         {"tie_y", tie[4]},
+        {"pixel_size_meters", std::round(scale[0] * 1000.0) / 1000.0},
         {"digest", digest(path)}
     };
+
+    if (has_scale && has_tie && tie[3] > 1000.0) {
+        double min_x = tie[3];
+        double max_y = tie[4];
+        double max_x = tie[3] + width * scale[0];
+        double min_y = tie[4] - height * scale[1];
+
+        double lat1 = 0, lon1 = 0, lat2 = 0, lon2 = 0;
+        utm_to_latlon(min_x, max_y, lat1, lon1, zone, southern);
+        utm_to_latlon(max_x, min_y, lat2, lon2, zone, southern);
+
+        res["latlon_bounds"] = {
+            std::min(lat1, lat2), std::min(lon1, lon2),
+            std::max(lat1, lat2), std::max(lon1, lon2)
+        };
+        res["spatial_extent_utm"] = {min_x, min_y, max_x, max_y};
+        res["crs"] = "EPSG:" + std::to_string(southern ? 32700 + zone : 32600 + zone) + " (UTM zone " + std::to_string(zone) + (southern ? "S" : "N") + ")";
+        res["zone"] = zone;
+        res["southern"] = southern;
+
+        double area_sq_m = (width * scale[0]) * (height * scale[1]);
+        double area_sq_km = area_sq_m / 1000000.0;
+        res["area_sq_km"] = std::round(area_sq_km * 10000.0) / 10000.0;
+        res["area_ha"] = std::round(area_sq_km * 100.0 * 100.0) / 100.0;
+    }
+
+    return res;
 }
 
 void make_demo(const std::filesystem::path& path) {

@@ -246,6 +246,8 @@ def convert_jp2_to_tiff(input_path, output_path):
         tiffinfo[33550] = (gml_meta['scale_x'], gml_meta['scale_y'], 0.0)
         tiffinfo[33922] = (0.0, 0.0, 0.0, gml_meta['tie_x'], gml_meta['tie_y'], 0.0)
         tiffinfo[34737] = gml_meta['crs']
+        epsg_val = int(gml_meta['epsg'])
+        tiffinfo[34735] = (1, 1, 0, 3, 1024, 0, 1, 1, 1025, 0, 1, 1, 3072, 0, 1, epsg_val)
     elif hasattr(img, 'tag_v2'):
         try:
             for tag_id in [33550, 33922, 34735, 34737]:

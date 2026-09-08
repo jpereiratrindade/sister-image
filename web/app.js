@@ -4,6 +4,7 @@ const $ = id => document.getElementById(id);
 let currentJob = null;
 let currentGeoJSON = null;
 let currentRasterInfo = null;
+let currentClippedInfo = null;
 let currentViewMode = 'map';
 let polling = false;
 
@@ -78,6 +79,74 @@ function latlonToUtm(lat, lon, zone = 22, southern = true) {
   }
 
   return { easting, northing };
+}
+
+function utmToLatLon(easting, northing, zone = 22, southern = true) {
+  const a = 6378137.0;
+  const f = 1 / 298.257223563;
+  const b = a * (1 - f);
+  const e = Math.sqrt(1 - (b / a) ** 2);
+  const ePrimeSq = (e ** 2) / (1 - e ** 2);
+  const k0 = 0.9996;
+
+  let x = easting - 500000.0;
+  let y = northing;
+  if (southern) {
+    y -= 10000000.0;
+  }
+
+  const m = y / k0;
+  const mu = m / (a * (1 - e ** 2 / 4 - 3 * e ** 4 / 64 - 5 * e ** 6 / 256));
+
+  const e1 = (1 - Math.sqrt(1 - e ** 2)) / (1 + Math.sqrt(1 - e ** 2));
+
+  const j1 = (3 * e1 / 2 - 27 * e1 ** 3 / 32);
+  const j2 = (21 * e1 ** 2 / 16 - 55 * e1 ** 4 / 32);
+  const j3 = (151 * e1 ** 3 / 96);
+  const j4 = (1097 * e1 ** 4 / 512);
+
+  const fp = mu + j1 * Math.sin(2 * mu) + j2 * Math.sin(4 * mu) + j3 * Math.sin(6 * mu) + j4 * Math.sin(8 * mu);
+
+  const c1 = ePrimeSq * Math.cos(fp) ** 2;
+  const t1 = Math.tan(fp) ** 2;
+  const r1 = a * (1 - e ** 2) / (1 - e ** 2 * Math.sin(fp) ** 2) ** 1.5;
+  const n1 = a / Math.sqrt(1 - e ** 2 * Math.sin(fp) ** 2);
+  const d = x / (n1 * k0);
+
+  const fact1 = n1 * Math.tan(fp) / r1;
+  const fact2 = d ** 2 / 2;
+  const fact3 = (5 + 3 * t1 + 10 * c1 - 4 * c1 ** 2 - 9 * ePrimeSq) * d ** 4 / 24;
+  const fact4 = (61 + 90 * t1 + 298 * c1 + 45 * t1 ** 2 - 252 * ePrimeSq - 3 * c1 ** 2) * d ** 6 / 720;
+
+  const latRad = fp - fact1 * (fact2 - fact3 + fact4);
+
+  const fact5 = d;
+  const fact6 = (1 + 2 * t1 + c1) * d ** 3 / 6;
+  const fact7 = (5 - 2 * c1 + 28 * t1 - 3 * c1 ** 2 + 8 * ePrimeSq + 24 * t1 ** 2) * d ** 5 / 120;
+
+  const lonDiff = (fact5 - fact6 + fact7) / Math.cos(fp);
+
+  const centralMeridian = (zone - 1) * 6 - 180 + 3;
+  const lon = centralMeridian + (lonDiff * 180 / Math.PI);
+  const lat = latRad * 180 / Math.PI;
+
+  return { lat, lon };
+}
+
+function updateWindowSpatialScale() {
+  const winEl = $('window');
+  const scaleEl = $('window-spatial-scale');
+  if (!winEl || !scaleEl) return;
+
+  const winPx = parseInt(winEl.value, 10) || 128;
+  const pixelMeters = currentRasterInfo ? (currentRasterInfo.pixel_size_meters || currentRasterInfo.scale_x || 10.0) : 10.0;
+
+  const totalMeters = winPx * pixelMeters;
+  const totalKm = totalMeters / 1000.0;
+  const areaSqM = totalMeters * totalMeters;
+  const areaHa = areaSqM / 10000.0;
+
+  scaleEl.textContent = `Escala: ${winPx} px = ${totalMeters.toLocaleString()} m (${totalKm.toFixed(2)} km) × ${totalMeters.toLocaleString()} m | Área da Janela: ${areaHa.toFixed(2)} ha (Res. ${pixelMeters}m/px)`;
 }
 
 // Draw vector polygon outlines and point markers on canvas
@@ -324,7 +393,12 @@ async function renderLeafletMap(geojson) {
     }).addTo(leafletInstance);
   }
 
-  if (currentJob && (!canvas || canvas.width === 0 || canvas.hidden)) {
+  if (currentJob && currentClippedInfo && currentClippedInfo.latlon_bounds) {
+    try {
+      await renderPGM(`api/jobs/${currentJob}/clipped_preview.pgm`);
+      if (canvas) canvas.hidden = true;
+    } catch (e) {}
+  } else if (currentJob && (!canvas || canvas.width === 0 || canvas.hidden)) {
     try {
       await renderPGM(`api/jobs/${currentJob}/original_preview.pgm`);
       if (canvas) canvas.hidden = true;
@@ -333,9 +407,10 @@ async function renderLeafletMap(geojson) {
 
   let finalFitBounds = null;
   let rasterLatLngBounds = null;
+  const activeInfo = (currentClippedInfo && currentClippedInfo.latlon_bounds) ? currentClippedInfo : currentRasterInfo;
 
-  if (currentRasterInfo && currentRasterInfo.latlon_bounds) {
-    const rb = currentRasterInfo.latlon_bounds;
+  if (activeInfo && activeInfo.latlon_bounds) {
+    const rb = activeInfo.latlon_bounds;
     rasterLatLngBounds = L.latLngBounds([[rb[0], rb[1]], [rb[2], rb[3]]]);
     finalFitBounds = rasterLatLngBounds;
   }
@@ -360,14 +435,14 @@ async function renderLeafletMap(geojson) {
     } catch (e) {}
   }
 
-  if (currentRasterInfo && geojson && rasterLatLngBounds && leafletGeoJsonLayer) {
-    const rb = currentRasterInfo.latlon_bounds;
+  if (activeInfo && geojson && rasterLatLngBounds && leafletGeoJsonLayer) {
+    const rb = activeInfo.latlon_bounds;
     const vb = geojson.bbox || [0, 0, 0, 0];
     const overlap = !(rb[2] < vb[1] || rb[0] > vb[3] || rb[3] < vb[0] || rb[1] > vb[2]);
     if (overlap) {
-      statusMessage(`🟢 Coincidência Espacial Verificada: Imagem Sentinel (${currentRasterInfo.crs || 'UTM'}) e Vetor sobrepostos em perfeito alinhamento.`);
+      statusMessage(`🟢 Coincidência Espacial Verificada: Imagem (${activeInfo.crs || 'UTM'}) e Vetor sobrepostos em perfeito alinhamento.`);
     } else {
-      statusMessage(`⚠️ Atenção: Os envelopes da imagem Sentinel e do vetor não coincidem espacialmente na mesma região.`, true);
+      statusMessage(`⚠️ Atenção: Os envelopes da imagem e do vetor não coincidem espacialmente na mesma região.`, true);
     }
   }
 
@@ -518,6 +593,25 @@ async function executeSpatialClip() {
       body: JSON.stringify(currentGeoJSON)
     });
     const data = await response.json();
+
+    if (data.result && data.result.tie_x > 0 && data.result.scale_x > 0) {
+      const minX = data.result.tie_x;
+      const maxY = data.result.tie_y;
+      const maxX = minX + data.result.output_width * data.result.scale_x;
+      const minY = maxY - data.result.output_height * data.result.scale_y;
+      const zone = currentRasterInfo ? (currentRasterInfo.zone || 22) : 22;
+      const southern = currentRasterInfo ? (currentRasterInfo.southern !== false) : true;
+
+      const pt1 = utmToLatLon(minX, maxY, zone, southern);
+      const pt2 = utmToLatLon(maxX, minY, zone, southern);
+      currentClippedInfo = {
+        ...data.result,
+        latlon_bounds: [
+          Math.min(pt1.lat, pt2.lat), Math.min(pt1.lon, pt2.lon),
+          Math.max(pt1.lat, pt2.lat), Math.max(pt1.lon, pt2.lon)
+        ]
+      };
+    }
 
     if ($('dl-clipped')) {
       $('dl-clipped').href = `api/jobs/${currentJob}/clipped.tif`;
@@ -713,6 +807,11 @@ if ($('mode')) {
     if ($('classes-field')) $('classes-field').hidden = patches;
     if ($('homogeneity-field')) $('homogeneity-field').hidden = !patches;
   };
+}
+
+if ($('window')) {
+  $('window').oninput = updateWindowSpatialScale;
+  $('window').onchange = updateWindowSpatialScale;
 }
 
 refreshJobs().catch(e => statusMessage(e.message, true));

@@ -42,4 +42,7 @@ struct ClipResult {
 
 ClipResult clip_raster(const ClipConfig& config);
 
+void latlon_to_utm(double lat, double lon, double& easting, double& northing, int zone = 22, bool southern = true);
+void utm_to_latlon(double easting, double northing, double& lat, double& lon, int zone = 22, bool southern = true);
+
 } // namespace sister_image
