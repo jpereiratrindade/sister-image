@@ -1,16 +1,97 @@
 #!/usr/bin/env python3
 """
 SisTer Image — Sentinel-2 JP2 / J2K Converter & Inspector
-Converts JPEG 2000 Sentinel satellite imagery to GeoTIFF and extracts metadata.
+Converts JPEG 2000 Sentinel satellite imagery to GeoTIFF and extracts spatial metadata.
 """
 import json
+import math
 import os
 import sys
 from pathlib import Path
-from PIL import Image, ImageFile
+from PIL import Image, ImageFile, TiffImagePlugin
 import numpy as np
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+def utm_to_latlon(easting, northing, zone=22, southern=True):
+    a = 6378137.0
+    f = 1 / 298.257223563
+    b = a * (1 - f)
+    e = math.sqrt(1 - (b / a) ** 2)
+    e_prime_sq = (e ** 2) / (1 - e ** 2)
+    k0 = 0.9996
+
+    x = easting - 500000.0
+    y = northing
+    if southern:
+        y -= 10000000.0
+
+    m = y / k0
+    mu = m / (a * (1 - e**2/4 - 3*e**4/64 - 5*e**6/256))
+
+    e1 = (1 - math.sqrt(1 - e**2)) / (1 + math.sqrt(1 - e**2))
+
+    j1 = (3*e1/2 - 27*e1**3/32)
+    j2 = (21*e1**2/16 - 55*e1**4/32)
+    j3 = (151*e1**3/96)
+    j4 = (1097*e1**4/512)
+
+    fp = mu + j1*math.sin(2*mu) + j2*math.sin(4*mu) + j3*math.sin(6*mu) + j4*math.sin(8*mu)
+
+    c1 = e_prime_sq * (math.cos(fp))**2
+    t1 = (math.tan(fp))**2
+    r1 = a * (1 - e**2) / (1 - e**2 * (math.sin(fp))**2)**1.5
+    n1 = a / math.sqrt(1 - e**2 * (math.sin(fp))**2)
+    d = x / (n1 * k0)
+
+    fact1 = n1 * math.tan(fp) / r1
+    fact2 = d**2 / 2
+    fact3 = (5 + 3*t1 + 10*c1 - 4*c1**2 - 9*e_prime_sq) * d**4 / 24
+    fact4 = (61 + 90*t1 + 298*c1 + 45*t1**2 - 252*e_prime_sq - 3*c1**2) * d**6 / 720
+
+    lat = fp - fact1 * (fact2 - fact3 + fact4)
+
+    fact5 = d
+    fact6 = (1 + 2*t1 + c1) * d**3 / 6
+    fact7 = (5 - 2*c1 + 28*t1 - 3*c1**2 + 8*e_prime_sq + 24*t1**2) * d**5 / 120
+
+    lon_diff = (fact5 - fact6 + fact7) / math.cos(fp)
+
+    central_meridian = (zone - 1) * 6 - 180 + 3
+    lon = central_meridian + math.degrees(lon_diff)
+    lat = math.degrees(lat)
+
+    return lat, lon
+
+def extract_spatial_tags(img, path_str=""):
+    scale_x, scale_y = 10.0, 10.0
+    tie_x, tie_y = 0.0, 0.0
+    crs = "WGS 84 / UTM zone 22S"
+    zone = 22
+    southern = True
+
+    if hasattr(img, 'tag_v2'):
+        tags = img.tag_v2
+        if 33550 in tags:
+            s = tags[33550]
+            scale_x, scale_y = float(s[0]), float(s[1])
+        if 33922 in tags:
+            t = tags[33922]
+            tie_x, tie_y = float(t[3]), float(t[4])
+        if 34737 in tags:
+            crs = str(tags[34737]).replace('\x00', '')
+
+    # Try extracting UTM zone from CRS or filename (e.g. T22JBL)
+    import re
+    m = re.search(r'zone\s*(\d+)([NSns]?)', crs, re.IGNORECASE)
+    if not m:
+        m = re.search(r'T(\d{2})[A-Z]{3}', path_str)
+    if m:
+        zone = int(m.group(1))
+        if m.lastindex >= 2 and m.group(2):
+            southern = (m.group(2).upper() == 'S')
+
+    return scale_x, scale_y, tie_x, tie_y, crs, zone, southern
 
 def inspect_jp2(path):
     img = Image.open(path)
@@ -18,9 +99,31 @@ def inspect_jp2(path):
     mode = img.mode
     channels = len(img.getbands()) if hasattr(img, 'getbands') else 1
 
-    # Check bit depth from numpy array
     arr = np.array(img)
     bps = 16 if arr.dtype == np.uint16 or mode.startswith('I') else 8
+
+    scale_x, scale_y, tie_x, tie_y, crs, zone, southern = extract_spatial_tags(img, str(path))
+
+    min_x = tie_x
+    max_y = tie_y
+    max_x = tie_x + width * scale_x
+    min_y = tie_y - height * scale_y
+
+    latlon_bounds = None
+    if tie_x > 1000 and tie_y > 1000:
+        try:
+            lat1, lon1 = utm_to_latlon(min_x, max_y, zone=zone, southern=southern)
+            lat2, lon2 = utm_to_latlon(max_x, min_y, zone=zone, southern=southern)
+            latlon_bounds = [
+                min(lat1, lat2), min(lon1, lon2),
+                max(lat1, lat2), max(lon1, lon2)
+            ]
+        except Exception:
+            pass
+
+    area_sq_m = (width * scale_x) * (height * scale_y)
+    area_sq_km = area_sq_m / 1000000.0
+    area_ha = area_sq_km * 100.0
 
     return {
         "width": width,
@@ -28,11 +131,17 @@ def inspect_jp2(path):
         "channels": channels,
         "bits_per_sample": bps,
         "photometric": 1,
-        "has_geotiff_tags": True, # Sentinel JP2 raster
-        "scale_x": 10.0, # Standard Sentinel-2 10m spatial resolution
-        "scale_y": 10.0,
-        "tie_x": 0.0,
-        "tie_y": 0.0,
+        "has_geotiff_tags": True,
+        "scale_x": scale_x,
+        "scale_y": scale_y,
+        "tie_x": tie_x,
+        "tie_y": tie_y,
+        "pixel_size_meters": round(scale_x, 3),
+        "crs": crs,
+        "spatial_extent_utm": [min_x, min_y, max_x, max_y],
+        "latlon_bounds": latlon_bounds,
+        "area_sq_km": round(area_sq_km, 4),
+        "area_ha": round(area_ha, 2),
         "format": "JPEG2000 (Sentinel-2)"
     }
 
@@ -57,7 +166,13 @@ def convert_jp2_to_tiff(input_path, output_path):
     else:
         raise ValueError(f"Dimensão de imagem JP2 não suportada: {arr.ndim}")
 
-    out_img.save(output_path, format='TIFF')
+    tiffinfo = TiffImagePlugin.ImageFileDirectoryv2()
+    if hasattr(img, 'tag_v2'):
+        for tag_id in [33550, 33922, 34735, 34737]:
+            if tag_id in img.tag_v2:
+                tiffinfo[tag_id] = img.tag_v2[tag_id]
+
+    out_img.save(output_path, format='TIFF', tiffinfo=tiffinfo)
     return True
 
 if __name__ == '__main__':

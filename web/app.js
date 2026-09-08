@@ -159,7 +159,7 @@ let leafletInstance = null;
 let leafletGeoJsonLayer = null;
 let leafletRasterOverlay = null;
 
-function renderLeafletMap(geojson) {
+async function renderLeafletMap(geojson) {
   const container = $('leaflet-map');
   const canvas = $('viewport-canvas');
   if (!container) return;
@@ -262,27 +262,65 @@ function renderLeafletMap(geojson) {
     }).addTo(leafletInstance);
   }
 
-  if (currentJob && canvas && canvas.width > 0 && leafletGeoJsonLayer) {
+  if (currentJob && (!canvas || canvas.width === 0 || canvas.hidden)) {
     try {
-      const bounds = leafletGeoJsonLayer.getBounds();
-      if (bounds && bounds.isValid()) {
+      await renderPGM(`api/jobs/${currentJob}/original_preview.pgm`);
+      if (canvas) canvas.hidden = true;
+    } catch (e) {}
+  }
+
+  let finalFitBounds = null;
+  let rasterLatLngBounds = null;
+
+  if (currentRasterInfo && currentRasterInfo.latlon_bounds) {
+    const rb = currentRasterInfo.latlon_bounds;
+    rasterLatLngBounds = L.latLngBounds([[rb[0], rb[1]], [rb[2], rb[3]]]);
+    finalFitBounds = rasterLatLngBounds;
+  }
+
+  if (currentJob && canvas && canvas.width > 0) {
+    try {
+      let imageBounds = rasterLatLngBounds;
+      if (!imageBounds && leafletGeoJsonLayer) {
+        imageBounds = leafletGeoJsonLayer.getBounds();
+      }
+      if (imageBounds && imageBounds.isValid && imageBounds.isValid()) {
         const dataUrl = canvas.toDataURL('image/png');
-        leafletRasterOverlay = L.imageOverlay(dataUrl, bounds, { opacity: 0.85 }).addTo(leafletInstance);
+        leafletRasterOverlay = L.imageOverlay(dataUrl, imageBounds, { opacity: 0.85 }).addTo(leafletInstance);
       }
     } catch (e) {}
   }
 
-  setTimeout(() => {
-    if (leafletInstance) {
-      leafletInstance.invalidateSize();
-      if (leafletGeoJsonLayer) {
-        try {
-          const bounds = leafletGeoJsonLayer.getBounds();
-          if (bounds && bounds.isValid()) {
-            leafletInstance.fitBounds(bounds, { padding: [40, 40] });
-          }
-        } catch (e) {}
+  if (leafletGeoJsonLayer) {
+    try {
+      const vecBounds = leafletGeoJsonLayer.getBounds();
+      if (vecBounds && vecBounds.isValid()) {
+        if (finalFitBounds && finalFitBounds.isValid && finalFitBounds.isValid()) {
+          finalFitBounds.extend(vecBounds);
+        } else {
+          finalFitBounds = vecBounds;
+        }
       }
+    } catch (e) {}
+  }
+
+  if (currentRasterInfo && geojson && rasterLatLngBounds && leafletGeoJsonLayer) {
+    const rb = currentRasterInfo.latlon_bounds;
+    const vb = geojson.bbox || [0, 0, 0, 0];
+    const overlap = !(rb[2] < vb[1] || rb[0] > vb[3] || rb[3] < vb[0] || rb[1] > vb[2]);
+    if (overlap) {
+      statusMessage(`🟢 Coincidência Espacial Verificada: Imagem Sentinel (${currentRasterInfo.crs || 'UTM'}) e Vetor sobrepostos em perfeito alinhamento.`);
+    } else {
+      statusMessage(`⚠️ Atenção: Os envelopes da imagem Sentinel e do vetor não coincidem espacialmente na mesma região.`, true);
+    }
+  }
+
+  setTimeout(() => {
+    if (leafletInstance && finalFitBounds && finalFitBounds.isValid && finalFitBounds.isValid()) {
+      leafletInstance.invalidateSize();
+      try {
+        leafletInstance.fitBounds(finalFitBounds, { padding: [40, 40] });
+      } catch (e) {}
     }
   }, 100);
 }
@@ -387,13 +425,23 @@ async function handleRasterInspect(file) {
     if ($('r-spp')) $('r-spp').textContent = currentRasterInfo.channels;
     if ($('r-bps')) $('r-bps').textContent = `${currentRasterInfo.bits_per_sample} bit`;
     if ($('r-geotiff')) $('r-geotiff').textContent = currentRasterInfo.has_geotiff_tags ? 'Sim (Georreferenciada)' : 'Não';
-    if ($('r-scale')) $('r-scale').textContent = `${currentRasterInfo.scale_x}, ${currentRasterInfo.scale_y}`;
+    if ($('r-scale')) $('r-scale').textContent = `${currentRasterInfo.scale_x}m × ${currentRasterInfo.scale_y}m`;
     if ($('r-tie')) $('r-tie').textContent = `${currentRasterInfo.tie_x}, ${currentRasterInfo.tie_y}`;
+    if ($('r-pixel-size')) $('r-pixel-size').textContent = `${currentRasterInfo.pixel_size_meters || currentRasterInfo.scale_x} m/px`;
+    if ($('r-area-ha')) $('r-area-ha').textContent = currentRasterInfo.area_ha ? `${currentRasterInfo.area_ha.toLocaleString()} ha` : '-';
+    if ($('r-latlon')) {
+      if (currentRasterInfo.latlon_bounds) {
+        const b = currentRasterInfo.latlon_bounds;
+        $('r-latlon').textContent = `[${b[0].toFixed(5)}, ${b[1].toFixed(5)}] a [${b[2].toFixed(5)}, ${b[3].toFixed(5)}]`;
+      } else {
+        $('r-latlon').textContent = 'Escala local (sem datum WGS84)';
+      }
+    }
 
     if ($('raster-info-card')) $('raster-info-card').hidden = false;
     if ($('clip-raster-name')) $('clip-raster-name').textContent = file.name;
 
-    statusMessage(`Raster "${file.name}" inspecionado. ${currentRasterInfo.width} × ${currentRasterInfo.height} px, ${currentRasterInfo.channels} canais.`);
+    statusMessage(`Raster "${file.name}" inspecionado. ${currentRasterInfo.width} × ${currentRasterInfo.height} px (${currentRasterInfo.scale_x}m/px).`);
   } catch (e) {
     statusMessage('Falha ao inspecionar raster: ' + e.message, true);
   }

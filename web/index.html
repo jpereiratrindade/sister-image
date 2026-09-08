@@ -100,16 +100,19 @@
           </label>
 
           <div id="raster-info-card" class="metrics-card" hidden>
-            <h4>Metadados Geográficos</h4>
+            <h4>Metadados Geográficos & Escala Espacial</h4>
             <div class="metrics-grid">
               <div class="metric-item"><span class="m-val" id="r-dim">0 × 0</span><span class="m-lbl">Dimensões (px)</span></div>
+              <div class="metric-item"><span class="m-val" id="r-pixel-size">10 m/px</span><span class="m-lbl">Tamanho do Pixel</span></div>
+              <div class="metric-item"><span class="m-val" id="r-area-ha">0 ha</span><span class="m-lbl">Área de Cobertura</span></div>
               <div class="metric-item"><span class="m-val" id="r-spp">0</span><span class="m-lbl">Canais/Bandas</span></div>
               <div class="metric-item"><span class="m-val" id="r-bps">0 bit</span><span class="m-lbl">Profundidade</span></div>
               <div class="metric-item"><span class="m-val" id="r-geotiff">Não</span><span class="m-lbl">Tags GeoTIFF</span></div>
             </div>
             <div class="bbox-info">
-              <small><strong>Pixel Scale (X, Y):</strong> <span id="r-scale">-</span></small><br>
-              <small><strong>Tiepoint Origin:</strong> <span id="r-tie">-</span></small>
+              <small><strong>Pixel Scale (Resolução X, Y):</strong> <span id="r-scale">-</span></small><br>
+              <small><strong>Tiepoint Origin (UTM):</strong> <span id="r-tie">-</span></small><br>
+              <small><strong>Bounding Box (Lat, Lon WGS84):</strong> <span id="r-latlon">-</span></small>
             </div>
           </div>
         </section>
