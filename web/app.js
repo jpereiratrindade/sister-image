@@ -430,11 +430,24 @@ async function renderLeafletMap(geojson) {
       const scale = res * 3779.527559;
 
       const scaleStr = scale >= 1000000 ? (scale / 1000000).toFixed(1) + 'M' : Math.round(scale).toLocaleString('pt-BR');
-      const resStr = res < 1.0 ? `${(res * 100).toFixed(0)} cm/px` : `${res.toFixed(1)} m/px`;
-      const isNativeSentinel = scale <= 20000;
-      const badge = isNativeSentinel
-        ? `<span style="background:rgba(16,185,129,0.2);color:#34d399;padding:1px 6px;border-radius:4px;font-weight:600;font-size:10px;">🔍 1:1 Pixel (10m)</span>`
-        : `<span style="background:rgba(148,163,184,0.15);color:#94a3b8;padding:1px 6px;border-radius:4px;font-size:10px;">🌐 Visão Geral</span>`;
+      const nativePixelMeters = (currentActiveRasterMode === 'clipped' && currentClippedInfo && currentClippedInfo.scale_x)
+        ? currentClippedInfo.scale_x
+        : (currentRasterInfo && (currentRasterInfo.scale_x || currentRasterInfo.pixel_size_meters)
+            ? (currentRasterInfo.pixel_size_meters || currentRasterInfo.scale_x)
+            : 10.0);
+
+      // Magnification ratio: how many screen pixels represent 1 native sensor pixel
+      const magRatio = nativePixelMeters / res;
+      const isPixelLevel = magRatio >= 1.8 || currentActiveRasterMode === 'clipped';
+
+      let badge;
+      if (magRatio < 0.9) {
+        badge = `<span style="background:rgba(148,163,184,0.15);color:#94a3b8;padding:1px 6px;border-radius:4px;font-size:10px;">🌐 Visão Geral (${nativePixelMeters}m/px)</span>`;
+      } else if (magRatio < 1.8) {
+        badge = `<span style="background:rgba(6,182,212,0.15);color:#06b6d4;padding:1px 6px;border-radius:4px;font-weight:600;font-size:10px;">🔎 Escala 1:1 (${nativePixelMeters}m)</span>`;
+      } else {
+        badge = `<span style="background:rgba(16,185,129,0.2);color:#34d399;padding:1px 6px;border-radius:4px;font-weight:600;font-size:10px;">🔬 Pixel Nativo (${nativePixelMeters}m: ${magRatio.toFixed(1)}×)</span>`;
+      }
 
       box.innerHTML = `
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:3px;">
@@ -460,8 +473,13 @@ async function renderLeafletMap(geojson) {
           const zoom = leafletInstance.getZoom();
           const lat = leafletInstance.getCenter().lat;
           const res = (156543.03392 * Math.cos(lat * Math.PI / 180.0)) / Math.pow(2, zoom);
-          const scale = res * 3779.527559;
-          if (scale <= 20000 || currentActiveRasterMode === 'clipped') {
+          const nativePixelMeters = (currentActiveRasterMode === 'clipped' && currentClippedInfo && currentClippedInfo.scale_x)
+            ? currentClippedInfo.scale_x
+            : (currentRasterInfo && (currentRasterInfo.scale_x || currentRasterInfo.pixel_size_meters)
+                ? (currentRasterInfo.pixel_size_meters || currentRasterInfo.scale_x)
+                : 10.0);
+          const magRatio = nativePixelMeters / res;
+          if (magRatio >= 1.8 || currentActiveRasterMode === 'clipped') {
             el.classList.add('pixelated-layer');
           } else {
             el.classList.remove('pixelated-layer');
