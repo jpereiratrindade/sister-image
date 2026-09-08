@@ -166,13 +166,19 @@ def convert_jp2_to_tiff(input_path, output_path):
     else:
         raise ValueError(f"Dimensão de imagem JP2 não suportada: {arr.ndim}")
 
-    tiffinfo = TiffImagePlugin.ImageFileDirectoryv2()
+    tiffinfo = {}
     if hasattr(img, 'tag_v2'):
-        for tag_id in [33550, 33922, 34735, 34737]:
-            if tag_id in img.tag_v2:
-                tiffinfo[tag_id] = img.tag_v2[tag_id]
+        try:
+            for tag_id in [33550, 33922, 34735, 34737]:
+                if tag_id in img.tag_v2:
+                    tiffinfo[tag_id] = img.tag_v2[tag_id]
+        except Exception:
+            pass
 
-    out_img.save(output_path, format='TIFF', tiffinfo=tiffinfo)
+    if tiffinfo:
+        out_img.save(output_path, format='TIFF', tiffinfo=tiffinfo)
+    else:
+        out_img.save(output_path, format='TIFF')
     return True
 
 if __name__ == '__main__':

@@ -383,9 +383,9 @@ int main(int argc, char** argv) {
                     busy = false;
                 });
                 respond(res, status, 202);
-            } catch (const std::exception&) {
+            } catch (const std::exception& e) {
                 { std::lock_guard guard(state_mutex); fs::remove_all(dir); }
-                busy = false; error(res, 400, "Falha no envio: use TIFF binario ate 1 GiB");
+                busy = false; error(res, 400, std::string("Falha no envio: ") + e.what());
             }
         };
         server.Post("/api/classify", [&](const httplib::Request& req, httplib::Response& res, const httplib::ContentReader& reader) { submit(req, res, &reader); });
