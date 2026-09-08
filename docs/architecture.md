@@ -1,58 +1,25 @@
-# Arquitetura e proveniência
+# Arquitetura e proveniência SisTer Image
 
-## Decisão 001 — fronteira exclusiva de imagens
+## Decisão 001 — fronteira exclusiva de imagens e vetores
 
-O novo componente extrai os algoritmos raster de `obce_gui` e mantém uma cópia
-local auditável. Não depende do checkout irmão para compilar ou qualificar.
-Não carrega telas CSI, modelos de linguagem, SDL2 ou ImGui.
+O componente SisTer Image consolida os algoritmos de análise raster e processamento vetorial sob a marca e identidade SisTer. Não depende de frameworks externos, GPU ou bibliotecas de runtime instáveis.
 
-Fontes iniciais:
+Fontes e inclusões:
+- Módulo `sister_image` C++20 com `RasterWindowAnalysis.cpp`, `VectorShape.cpp` (Shapefile, KML, KMZ), `RasterClip.cpp` (recorte GeoTIFF por polígonos);
+- `cpp-httplib` e `nlohmann/json` versionados em `vendor/`.
 
-- `obce_gui`, commit `ee0153e73419b7807e79e9d2633a7df76821e229`;
-- `obce`, commit `41a7ae24a9e2d7d1080e4a3cc364739e93d2457f`;
-- caminhos e hashes exatos capturados em `upstream.json`, inclusive se os
-  arquivos de trabalho diferissem do commit de referência;
-- cpp-httplib 0.42.0 e nlohmann/json importados de cópias já disponíveis no
-  workspace, com licenças mantidas. Ver `vendor/`.
+## Decisão 002 — núcleo, vetores e adaptadores
 
-## Decisão 002 — núcleo e adaptadores
+`RasterWindowAnalysis.cpp` e `RasterClip.cpp` formam a base numérica O(scanline). `service.cpp` orquestra a classificação, geração de prévias (imagem original e mapa classificado), recortes e proveniência SHA256 sem depender do servidor HTTP. `main.cpp` é o adaptador HTTP e catálogo de capacidades. `web/` apresenta a interface com o sistema de design SisTer (slate/emerald/cyan), abas de controle, alternância de visualização e renderização vetorial sobre o canvas.
 
-`RasterWindowAnalysis.cpp` é a base numérica extraída. `service.cpp` orquestra
-classificação, preview e proveniência sem depender de HTTP. `main.cpp` é o
-adaptador HTTP, catálogo de capacidades e agendamento. `web/` apenas apresenta
-parâmetros, estado e pixels calculados pelo servidor.
+## Decisão 003 — memória e otimização CPU/RAM
 
-O subconjunto NormalityModel/RegimeStateMachine está preservado em `vendor/obce`
-para compatibilidade da API raster herdada. O fluxo web desativa explicitamente
-a trilha de anomalias e trabalha em uma única escala por execução; evita
-normalização adaptativa e construção de regiões de anomalia que não são usadas
-pelos dois modos de classificação.
+Mantêm-se leituras e escritas em streaming de scanlines O(largura). A prévia da imagem original é gerada em tempo de ingestão em PGM P5 reduzida (até 1024² pixels) para visualização rápida no navegador sem carregar a imagem completa na memória do cliente. O recorte por polígono calcula a bounding box espacial, transforma coordenadas e aplica o algoritmo de Winding Number por pixel em streaming, preservando e recalculando `ModelTiepointTag` e `ModelPixelScaleTag`.
 
-## Decisão 003 — memória e processamento previsíveis
-
-Mantêm-se doubles nos acumuladores para reduzir erro de soma. Características
-são três valores contíguos. A classificação de manchas substitui mapas em
-árvore e filas com nós por índices numa grade e um vetor de busca reutilizado.
-
-A exportação mantém apenas uma linha de pixels e spans de janelas ativos.
-Resultado completo não é copiado para a UI: a prévia PGM tem até 1024² bytes.
-A API de download usa file streaming do cpp-httplib. Não existe cache global de
-imagens nem base64. A thread científica única evita multiplicar as alocações
-por uploads concorrentes. Os demais handlers permanecem disponíveis.
-
-Além das estruturas próprias, libtiff e codecs mantêm seus buffers internos;
-O mmap padrão da libtiff é desativado; o decoder recebe limite de 64 MiB por
-alocação. O(largura + janelas) descreve o algoritmo e não é garantia absoluta de RSS.
-Limites de entrada e buffers são conferidos antes de alocações próprias.
+Alocações do decoder libtiff permanecem limitadas a 64 MiB por chamada com mmap desativado.
 
 ## Decisão 004 — custódia e autorização
 
-O subsistema controla apenas suas entradas, resultados e evidências. Não se
-aprova para o ecossistema, não decide ações em outros participantes e não
-modifica autoridade de instalação. A identidade semântica é separada do binding.
-O contrato ARC-01 permanece DRAFT até promoção normativa externa.
+O subsistema controla apenas suas entradas, resultados e evidências. A identidade semântica é declarada em `contracts/participant.draft.json` e o binding HTTP em `contracts/manifest.json`.
 
-Local DEV é opt-in. Modo proxy é o padrão do binário e exige segredo externo.
-As rotas de identidade nunca fabricam um usuário local e negam solicitações
-sem mediação. Origens de navegador divergentes são rejeitadas para operações
-protegidas. Credenciais não ficam no código nem na interface.
+Local DEV é opt-in. Modo proxy exige segredo externo `SISTER_IMAGE_PROXY_TOKEN`.

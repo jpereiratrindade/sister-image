@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace appcore {
+namespace sister_image {
 
 struct RasterWindowAnalysisConfig {
     bool compute_anomalies{true};
@@ -109,4 +109,6 @@ RasterWindowAnalysisResult analyzeRasterWindows(const RasterWindowAnalysisConfig
 void writeRasterClassificationMap(const RasterWindowAnalysisResult& result,
                                   const RasterClassificationMapConfig& config);
 
-} // namespace appcore
+} // namespace sister_image
+
+namespace appcore = sister_image;

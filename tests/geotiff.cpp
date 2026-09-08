@@ -1,4 +1,4 @@
-#include "obce_gui/RasterWindowAnalysis.hpp"
+#include "sister_image/RasterWindowAnalysis.hpp"
 #include <tiffio.h>
 #include <filesystem>
 #include <stdexcept>
@@ -22,9 +22,9 @@ int main(){namespace fs=std::filesystem;auto dir=fs::temp_directory_path()/("ima
  TIFFSetField(t,33550,3,scale);TIFFSetField(t,33922,6,tie);TIFFSetField(t,34735,8,keys);
  std::vector<unsigned char> row(64);for(unsigned x=0;x<32;++x){row[x*2]=x<16?40:200;row[x*2+1]=x<8?0:255;}
  for(unsigned y=0;y<16;++y)check(TIFFWriteScanline(t,row.data(),y)>=0,"write");TIFFClose(t);
- appcore::RasterWindowAnalysisConfig c;c.raster_path=(dir/"input.tif").string();c.min_window_size_px=c.window_size_px=16;c.compute_anomalies=false;
- auto result=appcore::analyzeRasterWindows(c);check(result.ignored_pixels==128,"gray alpha transparency");check(result.windows.size()==2,"alpha valid fraction");
- appcore::RasterClassificationMapConfig m;m.output_path=(dir/"output.tif").string();m.class_count=2;appcore::writeRasterClassificationMap(result,m);
+ sister_image::RasterWindowAnalysisConfig c;c.raster_path=(dir/"input.tif").string();c.min_window_size_px=c.window_size_px=16;c.compute_anomalies=false;
+ auto result=sister_image::analyzeRasterWindows(c);check(result.ignored_pixels==128,"gray alpha transparency");check(result.windows.size()==2,"alpha valid fraction");
+ sister_image::RasterClassificationMapConfig m;m.output_path=(dir/"output.tif").string();m.class_count=2;sister_image::writeRasterClassificationMap(result,m);
  t=TIFFOpen(m.output_path.c_str(),"r");check(t,"output");register_tags(t);
  uint32_t count=0;double* values=nullptr;uint16_t* shorts=nullptr;
  check(TIFFGetField(t,33550,&count,&values)==1&&count==3&&values[0]==.25&&values[1]==.25,"pixel scale preserved");

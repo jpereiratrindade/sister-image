@@ -111,7 +111,6 @@ int main(int argc, char** argv) {
             const auto supplied = req.get_header_value("X-Sister-Proxy-Token");
             const bool valid = token.size() >= 32 && supplied.size() == token.size() && CRYPTO_memcmp(supplied.data(), token.data(), token.size()) == 0;
             if (identity ? !valid : (!local && !valid)) { error(res, 401, "Mediacao autenticada pelo sisterd necessaria"); return false; }
-            // Reject cross-origin browser mutations even for local DEV sessions.
             if (req.has_header("Origin")) {
                 const auto origin = req.get_header_value("Origin");
                 const auto host = req.get_header_value("Host");
@@ -125,14 +124,16 @@ int main(int argc, char** argv) {
                 return httplib::Server::HandlerResponse::Handled;
             }
             if (req.method != "GET" && req.method != "HEAD") {
-                if (req.path != "/api/classify" && req.path != "/api/demo" && req.path != "/echo" && req.method != "DELETE") {
+                static const std::regex post_routes(R"(/api/(classify|demo|shapes/parse|clip|convert)|/echo)");
+                static const std::regex clip_job_route(R"(/api/jobs/[0-9a-f]{32}/clip)");
+                if (!std::regex_match(req.path, post_routes) && !std::regex_match(req.path, clip_job_route) && req.method != "DELETE") {
                     error(res, 404, "Rota desconhecida");
                     return httplib::Server::HandlerResponse::Handled;
                 }
-                if (req.path != "/api/classify") {
+                if (req.path != "/api/classify" && req.path != "/api/clip") {
                     const auto size = req.get_header_value("Content-Length");
                     try {
-                        if (req.has_header("Transfer-Encoding") || (!size.empty() && std::stoull(size) > 70000)) {
+                        if (req.has_header("Transfer-Encoding") || (!size.empty() && std::stoull(size) > 10 * 1024 * 1024)) {
                             error(res, 413, "Payload fora do limite desta operacao");
                             return httplib::Server::HandlerResponse::Handled;
                         }
@@ -149,7 +150,11 @@ int main(int argc, char** argv) {
         server.Get("/manifest", [&](const auto&, auto& r) { respond(r, manifest); });
         server.Get("/capabilities", [&](const auto&, auto& r) {
             respond(r, {{"schema", "sister.subsystem.capabilities/1.0.0"}, {"system_id", "sister_image"}, {"contract", "sister.subsystem/1.0.0"}, {"generated_at", now()},
-                {"capabilities", Json::array({{{"id", "image.regions.classify"}, {"description", "Classificar regioes TIFF por intensidade e textura"}, {"risk", "low"}, {"observable_success", "Mapa TIFF e relatorio com hashes verificaveis"}}})}});
+                {"capabilities", Json::array({
+                    {{"id", "image.regions.classify"}, {"description", "Classificar regioes TIFF por intensidade e textura"}, {"risk", "low"}, {"observable_success", "Mapa TIFF e relatorio com hashes verificaveis"}},
+                    {{"id", "image.shape.clip"}, {"description", "Recortar GeoTIFF por mascaras de poligonos SHP/KML/KMZ"}, {"risk", "low"}, {"observable_success", "GeoTIFF recortado e previa de bordas"}},
+                    {{"id", "image.format.convert"}, {"description", "Converter formatos de visualizacao e transformar resolucao/coordenadas"}, {"risk", "low"}, {"observable_success", "Visualizacao PGM/GeoJSON produzida"}}
+                })}});
         });
         server.Get("/identity", [&](const auto& req, auto& r) {
             if (!authorized(req, r, true)) return;
@@ -183,14 +188,19 @@ int main(int argc, char** argv) {
             if (!fs::exists(path)) { error(r, 404, "Execucao nao encontrada"); return; }
             respond(r, read_json(path));
         });
-        server.Get(R"(/api/jobs/([0-9a-f]{32})/(map.tif|preview.pgm|report.json))", [&](const auto& req, auto& r) {
+        server.Get(R"(/api/jobs/([0-9a-f]{32})/(map.tif|preview.pgm|original_preview.pgm|clipped.tif|clipped_preview.pgm|report.json))", [&](const auto& req, auto& r) {
             if (!authorized(req, r)) return;
             std::lock_guard guard(state_mutex);
             const auto dir = jobs / req.matches[1].str();
             if (!fs::exists(dir / "status.json") || read_json(dir / "status.json").value("status", "") != "completed") { error(r, 404, "Resultado ainda indisponivel"); return; }
             const auto name = req.matches[2].str();
+            if (!fs::exists(dir / name)) { error(r, 404, "Arquivo nao encontrado"); return; }
             r.set_header("Content-Disposition", "attachment; filename=\"" + name + "\"");
-            r.set_file_content((dir / name).string(), name == "map.tif" ? "image/tiff" : name == "preview.pgm" ? "image/x-portable-graymap" : "application/json");
+            std::string content_type = "application/octet-stream";
+            if (name.ends_with(".tif")) content_type = "image/tiff";
+            else if (name.ends_with(".pgm")) content_type = "image/x-portable-graymap";
+            else if (name.ends_with(".json")) content_type = "application/json";
+            r.set_file_content((dir / name).string(), content_type);
         });
         server.Delete(R"(/api/jobs/([0-9a-f]{32}))", [&](const auto& req, auto& r) {
             if (!authorized(req, r)) return;
@@ -202,6 +212,55 @@ int main(int argc, char** argv) {
             fs::remove_all(dir);
             respond(r, {{"deleted", true}});
         });
+
+        // Endpoint para parsear vetores SHP/KML/KMZ/GeoJSON
+        server.Post("/api/shapes/parse", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!authorized(req, res)) return;
+            try {
+                VectorShape shape;
+                if (req.has_header("Content-Type") && req.get_header_value("Content-Type") == "application/json") {
+                    shape = VectorShape::parse_geojson(Json::parse(req.body));
+                } else {
+                    const auto temp_path = root / ("temp_vector_" + identifier() + ".tmp");
+                    std::ofstream temp(temp_path, std::ios::binary);
+                    temp.write(req.body.data(), req.body.size());
+                    temp.close();
+                    try { shape = VectorShape::parse_file(temp_path); }
+                    catch (...) { fs::remove(temp_path); throw; }
+                    fs::remove(temp_path);
+                }
+                respond(res, {{"schema", "sister.image.shape/1.0.0"}, {"geojson", shape.to_geojson()}});
+            } catch (const std::exception& e) {
+                error(res, 400, std::string("Falha processando vetor: ") + e.what());
+            }
+        });
+
+        // Endpoint para recortar GeoTIFF de um job por shape
+        server.Post(R"(/api/jobs/([0-9a-f]{32})/clip)", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!authorized(req, res)) return;
+            std::lock_guard guard(state_mutex);
+            const auto dir = jobs / req.matches[1].str();
+            if (!fs::exists(dir / "status.json") || read_json(dir / "status.json").value("status", "") != "completed") {
+                error(res, 404, "Job nao concluido ou inexistente"); return;
+            }
+            try {
+                VectorShape shape;
+                if (req.body.starts_with("{")) shape = VectorShape::parse_geojson(Json::parse(req.body));
+                else {
+                    const auto temp_path = dir / "temp_clip_vector.tmp";
+                    std::ofstream temp(temp_path, std::ios::binary);
+                    temp.write(req.body.data(), req.body.size());
+                    temp.close();
+                    shape = VectorShape::parse_file(temp_path);
+                    fs::remove(temp_path);
+                }
+                auto clip_res = clip_job(dir, shape);
+                respond(res, {{"schema", "sister.image.clip_result/1.0.0"}, {"result", clip_res.to_json()}});
+            } catch (const std::exception& e) {
+                error(res, 400, std::string("Falha ao recortar TIFF: ") + e.what());
+            }
+        });
+
         auto submit = [&](const httplib::Request& req, httplib::Response& res, const httplib::ContentReader* reader) {
             if (!authorized(req, res)) return;
             Json options;
@@ -257,7 +316,7 @@ int main(int argc, char** argv) {
         }
         server.set_error_handler([](const auto&, auto& r) { if (r.body.empty()) error(r, r.status, "Rota ou requisicao invalida"); });
         server.set_exception_handler([](const auto&, auto& r, std::exception_ptr) { error(r, 500, "Falha interna; consulte a evidencia da execucao"); });
-        // sigwait avoids calling non-async-signal-safe server methods from handlers.
+        
         sigset_t signals;
         sigemptyset(&signals); sigaddset(&signals, SIGTERM); sigaddset(&signals, SIGINT);
         pthread_sigmask(SIG_BLOCK, &signals, nullptr);

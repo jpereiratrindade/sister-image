@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OBCE - Online Binary Classification Engine
-//
-// NormalityModel.hpp - Online baseline and anomaly scoring.
+// SisTer Image — NormalityModel.hpp
 
 #pragma once
 
@@ -16,7 +14,7 @@
 #include "Label.hpp"
 #include "RegimeStateMachine.hpp"
 
-namespace obce {
+namespace sister_image {
 
 struct NormalityReport {
     RegimeState               state{RegimeState::kCalibrating};
@@ -88,4 +86,4 @@ private:
     [[nodiscard]] std::optional<int> weakLabelFor(RegimeState state) const noexcept;
 };
 
-} // namespace obce
+} // namespace sister_image

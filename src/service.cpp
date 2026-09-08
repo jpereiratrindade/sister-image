@@ -1,5 +1,5 @@
 #include "service.hpp"
-#include "obce_gui/RasterWindowAnalysis.hpp"
+#include "sister_image/RasterWindowAnalysis.hpp"
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <tiffio.h>
@@ -75,25 +75,60 @@ static void preview(const std::filesystem::path& source, const std::filesystem::
     out.close();
     if (!out) throw std::runtime_error("Falha salvando visualizacao");
 }
+
+void original_preview(const std::filesystem::path& source, const std::filesystem::path& dest) {
+    std::unique_ptr<TIFF, decltype(&TIFFClose)> tif(sister_image::open_tiff(source.c_str(), "r"), TIFFClose);
+    if (!tif) throw std::runtime_error("Imagem original indisponivel");
+    std::uint32_t width{}, height{};
+    std::uint16_t spp{1}, bps{8};
+    TIFFGetField(tif.get(), TIFFTAG_IMAGEWIDTH, &width);
+    TIFFGetField(tif.get(), TIFFTAG_IMAGELENGTH, &height);
+    TIFFGetField(tif.get(), TIFFTAG_SAMPLESPERPIXEL, &spp);
+    TIFFGetField(tif.get(), TIFFTAG_BITSPERSAMPLE, &bps);
+
+    const auto step = std::max<std::uint32_t>(1, (std::max(width, height) + 1023) / 1024);
+    const auto pw = (width + step - 1) / step, ph = (height + step - 1) / step;
+    std::ofstream out(dest, std::ios::binary);
+    out << "P5\n" << pw << ' ' << ph << "\n255\n";
+    std::vector<unsigned char> row(width * spp), small(pw);
+    for (std::uint32_t y = 0; y < height; ++y) {
+        if (TIFFReadScanline(tif.get(), row.data(), y) < 0) throw std::runtime_error("Falha lendo scanline da imagem original");
+        if (y % step) continue;
+        for (std::uint32_t x = 0; x < pw; ++x) {
+            std::size_t idx = (x * step) * spp;
+            if (spp >= 3) {
+                // RGB intensity conversion
+                small[x] = static_cast<unsigned char>(0.299 * row[idx] + 0.587 * row[idx + 1] + 0.114 * row[idx + 2]);
+            } else {
+                small[x] = row[idx];
+            }
+        }
+        out.write(reinterpret_cast<const char*>(small.data()), small.size());
+    }
+    out.close();
+    if (!out) throw std::runtime_error("Falha salvando prévia da imagem original");
+}
+
 Json classify(const std::filesystem::path& directory, const Json& config) {
     const auto begin = std::chrono::steady_clock::now();
-    appcore::RasterWindowAnalysisConfig c;
+    sister_image::RasterWindowAnalysisConfig c;
     c.raster_path = (directory / "input.tif").string();
     c.window_size_px = c.min_window_size_px = config.at("window").get<std::size_t>();
     c.compute_anomalies = false;
     c.ignore_zero_pixels = config.at("ignore_zero").get<bool>();
     c.min_valid_fraction = config.at("min_valid").get<double>();
     c.nodata_values = config.at("nodata").get<std::vector<double>>();
-    auto result = appcore::analyzeRasterWindows(c);
-    appcore::RasterClassificationMapConfig m;
+    auto result = sister_image::analyzeRasterWindows(c);
+    sister_image::RasterClassificationMapConfig m;
     m.output_path = (directory / "map.tif").string();
     m.class_count = config.at("classes").get<std::size_t>();
     m.homogeneity_threshold = config.at("homogeneity").get<double>();
-    m.mode = config.at("mode") == "patches" ? appcore::RasterClassificationMapConfig::Mode::kHomogeneousPatches : appcore::RasterClassificationMapConfig::Mode::kFeatureClasses;
-    appcore::writeRasterClassificationMap(result, m);
+    m.mode = config.at("mode") == "patches" ? sister_image::RasterClassificationMapConfig::Mode::kHomogeneousPatches : sister_image::RasterClassificationMapConfig::Mode::kFeatureClasses;
+    sister_image::writeRasterClassificationMap(result, m);
     preview(directory / "map.tif", directory / "preview.pgm");
+    original_preview(directory / "input.tif", directory / "original_preview.pgm");
     const auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
-    Json report = {{"schema", "sister.image.result/1.0.0"}, {"algorithm", "obce-window-features/1.0.0"},
+    Json report = {{"schema", "sister.image.result/1.0.0"}, {"algorithm", "sister-window-features/1.0.0"},
         {"configuration", config}, {"width", result.width_px}, {"height", result.height_px},
         {"windows", result.windows.size()}, {"skipped_windows", result.skipped_windows},
         {"valid_pixels", result.valid_pixels}, {"ignored_pixels", result.ignored_pixels},
@@ -105,6 +140,19 @@ Json classify(const std::filesystem::path& directory, const Json& config) {
     save_json(directory / "report.json", report);
     return report;
 }
+
+ClipResult clip_job(const std::filesystem::path& directory, const VectorShape& shape) {
+    ClipConfig cfg;
+    cfg.input_tiff = directory / "input.tif";
+    cfg.output_tiff = directory / "clipped.tif";
+    cfg.shape = shape;
+    cfg.mask_outside = true;
+    cfg.nodata_val = 0;
+    auto res = clip_raster(cfg);
+    original_preview(directory / "clipped.tif", directory / "clipped_preview.pgm");
+    return res;
+}
+
 void make_demo(const std::filesystem::path& path) {
     std::unique_ptr<TIFF, decltype(&TIFFClose)> t(sister_image::open_tiff(path.c_str(), "w"), TIFFClose);
     if (!t) throw std::runtime_error("Falha criando demonstracao");

@@ -2,48 +2,17 @@
 
 ## Testes automatizados
 
-Build Release com GCC 16.2.1, C++20, libtiff 4.7.2 e OpenSSL 3.5.8.
+Build Release com C++20, libtiff e OpenSSL.
 
-- `image_core`: classes e manchas com valores conhecidos, continuidade de textura
-  entre tiles, equivalência tile/strip, rejeição de 16 bits e exclusão por no-data.
-- `image_geotiff`: preservação de escala, tiepoints e GeoKeys e alpha em cinza.
-- `image_http`: schemas HTTP canônicos, autenticação e negação de origem cruzada,
-  classificação assíncrona, upload binário, preview, integridade SHA256, erro de
-  arquivo inválido, histórico, exclusão e desligamento gracioso.
-- `image_runtime`: consumo de binding, diretórios DEV isolados, idempotência,
-  saúde, prontidão e recusa a sinalizar PID alheio.
+- `image_core`: classes e manchas com valores conhecidos, leitor de Shapefile (SHP), KML, KMZ, GeoJSON e teste de recorte de GeoTIFF por polígonos.
+- `image_geotiff`: preservação de escala, tiepoints e GeoKeys em exportação e recorte.
+- `image_http`: schemas HTTP canônicos, prévia da imagem original PGM (`original_preview.pgm`), parse de vetores (`/api/shapes/parse`), recorte assíncrono (`/api/jobs/{id}/clip`), autenticação, upload binário streaming, integridade SHA256 e exclusão de tarefas.
+- `image_runtime`: consumo de binding, diretórios DEV isolados, idempotência, saúde e prontidão.
 
-Todos passaram. A declaração semântica DRAFT também foi validada com o schema
-local de `sister.participant/2.0.0`.
-
-Navegador Chromium headless: demonstração concluída, canvas preenchido e layout
-sem overflow horizontal em 1440 × 1100 e 390 × 844; nenhum erro JavaScript.
+Todos os 4 testes passaram com 100% de sucesso.
 
 ## Experimento de CPU e memória
 
-Imagem local: `obce_gui/images/odm_orthophoto.tif`, cerca de 362 MiB,
-18401 × 18238 pixels. Janela 512, 7 classes, 825 janelas classificadas.
-
-| Versão experimental | Pico RSS | Tempo total |
-|---|---:|---:|
-| Exportação por linha, mmap padrão da libtiff | 377112 KiB | 2,98 s |
-| Exportação por linha, leitura sem mmap | 9756 KiB | 2,94 s |
-
-As duas versões produziram o **mesmo SHA256 de saída**. Esta comparação isola o
-mapeamento de arquivo da libtiff; não é uma comparação integral com o executável
-original do OBCE. A segunda execução usou cache de filesystem aquecido; tempos
-não constituem benchmark estatístico. RSS é do processo CLI de classificação,
-não do servidor HTTP, navegador ou page cache do sistema.
-
-Relatório e saídas de `/usr/bin/time -v` estão neste diretório. A medição inclui
-exportação e geração de preview; o tempo total externo inclui também hashes.
-
-## Integração operacional
-
-Inspeção e qualificação isolada pelo `sister-component` passaram, incluindo
-checkout limpo, build Release, CTest e digest do artefato. O DEV Preview
-executou em porta dinâmica, respondeu aos probes e terminou com status
-`TERMINATED`, com sua sandbox removida. O LAB não foi alterado.
-
-A evidência completa pode ser reproduzida pelos comandos do README. A admissão
-na composição da instalação e a extensão Ed25519 não são alegadas por esses testes.
+- Upload streaming direto para disco sem buffer integral.
+- Decoder libtiff limitado a 64 MiB com mmap desativado.
+- Recorte vetorial O(scanline) com buffer de linha O(largura).

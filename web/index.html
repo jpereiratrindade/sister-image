@@ -1,7 +1,178 @@
 <!doctype html>
-<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SisTer Image · Classificação de imagens</title><link rel="stylesheet" href="style.css"><script src="app.js" defer></script></head>
-<body><header><a class="brand" href="./"><span class="mark">▦</span> SisTer <strong>Image</strong></a><span class="badge">Laboratório de imagens</span></header>
-<main><section class="intro"><p class="eyebrow">DA IMAGEM ÀS REGIÕES</p><h1>Encontre padrões.<br><span>Explore a paisagem.</span></h1><p>Classifique regiões por intensidade e textura. Compare classes visuais e manchas homogêneas, preservando a referência espacial do seu TIFF.</p></section>
-<div class="workspace"><aside><form id="form"><section class="panel"><div class="section-title"><span>01</span><h2>Imagem de entrada</h2></div><label class="drop" id="drop" for="file"><span class="upload-icon">↥</span><strong id="filename">Escolha ou arraste um TIFF</strong><small>TIFF / GeoTIFF · até 1 GiB<br>8 bits · RGB, RGBA ou cinza</small><input id="file" type="file" accept=".tif,.tiff,image/tiff"></label><button type="button" class="text-button" id="demo">Experimentar com imagem de exemplo ↗</button></section>
-<section class="panel"><div class="section-title"><span>02</span><h2>Classificação</h2></div><label>Método<select id="mode"><option value="classes">Classes de intensidade e textura</option><option value="patches">Manchas homogêneas</option></select></label><p class="help" id="method-help">Agrupa janelas com características semelhantes. Os tons representam classes visuais.</p><div class="fields"><label>Janela (pixels)<input id="window" type="number" min="8" max="8192" value="128" required></label><label id="classes-field">Classes<input id="classes" type="number" min="2" max="9" value="5" required></label><label id="homogeneity-field" hidden>Homogeneidade<input id="homogeneity" type="number" min="0.01" max="10" step="0.01" value="0.85"></label></div><details><summary>Pixels e áreas sem dados</summary><label class="check"><input id="ignore_zero" type="checkbox" checked> Ignorar pixels pretos (zero)</label><label>Fração mínima de pixels válidos<input id="min_valid" type="number" min="0" max="1" step="0.05" value="0.25"></label><label>Valor adicional sem dados (opcional)<input id="nodata" type="number" min="0" max="255" placeholder="Ex.: 255"></label><p class="help">Pixels transparentes são ignorados. O valor adicional é comparado à intensidade em cinza.</p></details><button class="primary" id="submit" type="submit">Classificar imagem <span>→</span></button></section></form></aside>
-<section class="results"><div class="panel viewer"><div class="viewer-heading"><div><p class="eyebrow">RESULTADO</p><h2 id="result-title">Seu mapa de regiões</h2></div><span id="state" class="badge">Aguardando imagem</span></div><div id="message" role="status" aria-live="polite">Envie uma imagem ou experimente o exemplo para começar.</div><progress id="progress" hidden></progress><div id="empty"><div class="grid-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><p>Uma nova leitura da sua imagem</p><small>O mapa aparecerá aqui após a classificação.</small></div><canvas id="canvas" hidden aria-label="Prévia do mapa de classes em tons de cinza"></canvas><div id="result" hidden><div class="metrics" id="metrics"></div><p class="help">Prévia reduzida. O GeoTIFF mantém as dimensões originais. Preto indica janelas sem classificação; tons não são categorias semânticas nem probabilidades.</p><div class="downloads"><a class="primary" id="map" download>Baixar GeoTIFF ↓</a><a class="secondary" id="report" download>Relatório JSON ↓</a></div></div></div><section class="panel history"><div class="section-title"><span>03</span><h2>Execuções recentes</h2></div><div id="jobs"><p class="help">Nenhuma execução ainda.</p></div></section></section></div><footer>SisTer Image <span>Classificação visual experimental · Base OBCE</span></footer></main></body></html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SisTer Image · Processamento e Classificação de Imagens</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header>
+    <a class="brand" href="./">
+      <span class="mark">▦</span>
+      <span>SisTer <strong>Image</strong></span>
+    </a>
+    <div class="header-status">
+      <span class="badge status-pill"><span class="dot"></span> sister.subsystem/1.0.0</span>
+      <span class="badge">Laboratório de Sensoriamento Remoto</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="intro">
+      <p class="eyebrow">DA IMAGEM ÀS REGIÕES & RECOVERY VETORIAL</p>
+      <h1>Análise Espacial.<br><span>Explore e Recorte a Paisagem.</span></h1>
+      <p>Classificação não supervisionada de imagens GeoTIFF, sobreposição vetorial SHP/KML e ferramentas de recorte O(scanline) com preservação de georreferenciamento.</p>
+    </section>
+
+    <div class="nav-tabs" role="tablist">
+      <button class="tab-btn active" data-tab="tab-classify" role="tab" aria-selected="true">▦ Classificação Raster</button>
+      <button class="tab-btn" data-tab="tab-shape" role="tab" aria-selected="false">⬡ Shapes SHP & KML/KMZ</button>
+      <button class="tab-btn" data-tab="tab-history" role="tab" aria-selected="false">⏱ Execuções Recentes</button>
+    </div>
+
+    <div class="workspace">
+      <!-- SIDEBAR CONTROLS -->
+      <aside>
+        <!-- TAB 1: CLASSIFICAÇÃO -->
+        <div id="tab-classify" class="tab-content active">
+          <form id="form">
+            <section class="panel">
+              <div class="section-title"><span>01</span><h2>Imagem TIFF de entrada</h2></div>
+              <label class="drop" id="drop" for="file">
+                <span class="upload-icon">↥</span>
+                <strong id="filename">Escolha ou arraste um TIFF</strong>
+                <small>TIFF / BigTIFF / GeoTIFF · até 1 GiB<br>8 bits · RGB, RGBA ou Cinza</small>
+                <input id="file" type="file" accept=".tif,.tiff,image/tiff">
+              </label>
+              <button type="button" class="text-button" id="demo">Experimentar com imagem de exemplo ↗</button>
+            </section>
+
+            <section class="panel">
+              <div class="section-title"><span>02</span><h2>Parâmetros de Análise</h2></div>
+              <label>Método
+                <select id="mode">
+                  <option value="classes">Classes de intensidade e textura</option>
+                  <option value="patches">Manchas homogêneas</option>
+                </select>
+              </label>
+              <p class="help" id="method-help">Agrupa janelas com características semelhantes. Os tons representam classes visuais.</p>
+              
+              <div class="fields">
+                <label>Janela (pixels)
+                  <input id="window" type="number" min="8" max="8192" value="128" required>
+                </label>
+                <label id="classes-field">Classes
+                  <input id="classes" type="number" min="2" max="9" value="5" required>
+                </label>
+                <label id="homogeneity-field" hidden>Homogeneidade
+                  <input id="homogeneity" type="number" min="0.01" max="10" step="0.01" value="0.85">
+                </label>
+              </div>
+
+              <details>
+                <summary>Pixels e áreas sem dados</summary>
+                <label class="check">
+                  <input id="ignore_zero" type="checkbox" checked> Ignorar pixels pretos (zero)
+                </label>
+                <label>Fração mínima de pixels válidos
+                  <input id="min_valid" type="number" min="0" max="1" step="0.05" value="0.25">
+                </label>
+                <label>Valor adicional sem dados (opcional)
+                  <input id="nodata" type="number" min="0" max="255" placeholder="Ex.: 255">
+                </label>
+                <p class="help">Pixels transparentes são ignorados. O valor adicional é comparado à intensidade em cinza.</p>
+              </details>
+
+              <button class="primary" id="submit" type="submit">Classificar Imagem <span>→</span></button>
+            </section>
+          </form>
+        </div>
+
+        <!-- TAB 2: SHAPES & RECORTE -->
+        <div id="tab-shape" class="tab-content">
+          <section class="panel">
+            <div class="section-title"><span>03</span><h2>Polígonos & Vetores</h2></div>
+            <label class="drop" id="shape-drop" for="shape-file">
+              <span class="upload-icon">⬡</span>
+              <strong id="shape-filename">Escolha SHP, KML, KMZ ou ZIP</strong>
+              <small>Shapefile (.shp), Google Earth (.kml/.kmz) ou GeoJSON</small>
+              <input id="shape-file" type="file" accept=".shp,.kml,.kmz,.zip,.geojson,.json">
+            </label>
+
+            <div id="shape-info" class="shape-info-card" hidden>
+              <p><strong>Vetor Carregado:</strong> <span id="shape-name">Nenhum</span></p>
+              <p><strong>Polígonos:</strong> <span id="shape-poly-count">0</span></p>
+            </div>
+
+            <button class="primary" id="clip-btn" type="button" disabled>Recortar GeoTIFF por Shape <span>✂</span></button>
+            <p class="help">O recorte gera um novo GeoTIFF preservando a matriz de transformação espacial e aplicando a máscara de polígono em streaming O(scanline).</p>
+          </section>
+        </div>
+
+        <!-- TAB 3: HISTÓRICO -->
+        <div id="tab-history" class="tab-content">
+          <section class="panel history">
+            <div class="section-title"><span>04</span><h2>Execuções Recentes</h2></div>
+            <div id="jobs">
+              <p class="help">Nenhuma execução ainda.</p>
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <!-- MAIN RESULTS & VIEWER -->
+      <section class="results">
+        <div class="panel viewer">
+          <div class="viewer-heading">
+            <div>
+              <p class="eyebrow">VISUALIZADOR SISTER</p>
+              <h2 id="result-title">Sua imagem e mapa de regiões</h2>
+            </div>
+            <span id="state" class="badge">Aguardando imagem</span>
+          </div>
+
+          <!-- VIEWER MODE TOGGLE BUTTONS -->
+          <div class="viewer-controls" id="viewer-controls" hidden>
+            <button class="view-btn active" id="view-map">Mapa Classificado</button>
+            <button class="view-btn" id="view-original">Imagem Original</button>
+            <button class="view-btn" id="view-overlay">Sobreposição Vetor</button>
+            <button class="view-btn" id="view-clipped" hidden>Resultado Recortado</button>
+          </div>
+
+          <div id="message" role="status" aria-live="polite">Envie uma imagem ou experimente o exemplo para começar.</div>
+          <progress id="progress" hidden></progress>
+
+          <div id="empty">
+            <div class="grid-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <p>Uma nova leitura da sua imagem</p>
+            <small>O mapa e as opções de prévia aparecerão aqui após o processamento.</small>
+          </div>
+
+          <div class="canvas-container">
+            <canvas id="canvas" hidden aria-label="Prévia do mapa de regiões"></canvas>
+          </div>
+
+          <div id="result" hidden>
+            <div class="metrics" id="metrics"></div>
+            <p class="help">Prévia reduzida. O GeoTIFF mantém as dimensões originais. Preto indica janelas sem classificação; tons não são categorias semânticas nem probabilidades.</p>
+            
+            <div class="downloads">
+              <a class="primary" id="map" download>Baixar GeoTIFF Classificado ↓</a>
+              <a class="secondary" id="download-original" download>Prévia Original PGM ↓</a>
+              <a class="secondary" id="download-clipped" download hidden>GeoTIFF Recortado ↓</a>
+              <a class="secondary" id="report" download>Relatório JSON ↓</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <footer>
+      <span>SisTer Image · Processamento e Classificação Espacial</span>
+      <span>Contrato <code>sister.subsystem/1.0.0</code> · Arquitetura O(scanline)</span>
+    </footer>
+  </main>
+</body>
+</html>

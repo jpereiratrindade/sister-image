@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
-// OBCE - NormalityModel.cpp
+// SisTer Image — NormalityModel.cpp
 
-#include "obce/NormalityModel.hpp"
+#include "sister_image/NormalityModel.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <numeric>
 #include <stdexcept>
 
-namespace obce {
+namespace sister_image {
 
 nlohmann::json NormalityReport::toJson() const {
     nlohmann::json weak = nullptr;
@@ -276,4 +276,4 @@ std::optional<int> NormalityModel::weakLabelFor(RegimeState state) const noexcep
     return std::nullopt;
 }
 
-} // namespace obce
+} // namespace sister_image

@@ -21,7 +21,9 @@
     "echo": "/echo"
   },
   "capabilities": [
-    "image.regions.classify"
+    "image.regions.classify",
+    "image.shape.clip",
+    "image.format.convert"
   ],
   "capability_offers": [
     {
@@ -50,6 +52,20 @@
         ]
       },
       "observable_success": "Tarefa concluida com mapa TIFF e relatorio contendo parametros e hashes SHA256 verificaveis"
+    },
+    {
+      "capability": "image.shape.clip",
+      "method": "POST",
+      "endpoint": "/api/clip",
+      "input": {
+        "schema": "sister.image.shape/1.0.0",
+        "fields": ["geojson", "shp", "kml"]
+      },
+      "output": {
+        "schema": "sister.image.clip_result/1.0.0",
+        "fields": ["result"]
+      },
+      "observable_success": "GeoTIFF recortado por poligono com georreferenciamento atualizado"
     }
   ],
   "data_ownership": "exclusive",

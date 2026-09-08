@@ -1,4 +1,4 @@
-#include "obce_gui/RasterWindowAnalysis.hpp"
+#include "sister_image/RasterWindowAnalysis.hpp"
 
 #include <algorithm>
 #include <array>
@@ -16,9 +16,9 @@
 #include <tiffio.h>
 #include "tiff_resource.hpp"
 
-#include "obce/NormalityModel.hpp"
+#include "sister_image/NormalityModel.hpp"
 
-namespace appcore {
+namespace sister_image {
 namespace {
 
 constexpr std::uint32_t kModelPixelScaleTag = 33550;
@@ -795,15 +795,14 @@ RasterWindowAnalysisResult analyzeRasterWindowsSingleScale(const RasterWindowAna
         return result;
     }
 
-    obce::NormalityModel::Config model_cfg;
+    sister_image::NormalityModel::Config model_cfg;
     model_cfg.n_features = 3;
     model_cfg.warmup_samples = std::min(config.warmup_windows, candidate_windows.size());
     model_cfg.z_threshold = config.z_threshold;
     model_cfg.anomaly_score_threshold = config.anomaly_threshold;
-    model_cfg.state_machine.suspicion_persistence = 1;
-    model_cfg.state_machine.perturbation_persistence = 1;
-    model_cfg.state_machine.recovery_persistence = 1;
-    obce::NormalityModel model(model_cfg);
+    model_cfg.state_machine.suspect_patience = 1;
+    model_cfg.state_machine.recovery_patience = 1;
+    sister_image::NormalityModel model(model_cfg);
 
     result.windows.reserve(candidate_windows.size());
     for (auto window : candidate_windows) {
@@ -981,4 +980,4 @@ void writeRasterClassificationMap(const RasterWindowAnalysisResult& result,
     owner.reset();
 }
 
-} // namespace appcore
+} // namespace sister_image

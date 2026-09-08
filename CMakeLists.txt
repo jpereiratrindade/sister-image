@@ -13,9 +13,10 @@ if(SISTER_IMAGE_SANITIZERS)
   add_link_options(-fsanitize=address,undefined)
 endif()
 add_library(image_core src/RasterWindowAnalysis.cpp src/service.cpp
-  vendor/obce/src/NormalityModel.cpp vendor/obce/src/RegimeStateMachine.cpp)
+  src/NormalityModel.cpp src/RegimeStateMachine.cpp
+  src/VectorShape.cpp src/RasterClip.cpp)
 target_include_directories(image_core PUBLIC include)
-target_include_directories(image_core SYSTEM PUBLIC vendor vendor/obce/include)
+target_include_directories(image_core SYSTEM PUBLIC vendor)
 target_link_libraries(image_core PUBLIC TIFF::TIFF OpenSSL::Crypto Threads::Threads)
 target_compile_options(image_core PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_executable(sister-image-http src/main.cpp)

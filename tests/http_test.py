@@ -62,6 +62,28 @@ with tempfile.TemporaryDirectory(prefix='sister-image-http-') as temp:
                 data=request(base,f"/api/jobs/{job['id']}/map.tif",headers=headers)
                 assert report['output_digest']=='sha256:'+hashlib.sha256(data).hexdigest()
                 assert request(base,f"/api/jobs/{job['id']}/preview.pgm",headers=headers).startswith(b'P5\n')
+                assert request(base,f"/api/jobs/{job['id']}/original_preview.pgm",headers=headers).startswith(b'P5\n')
+
+                # Test Vector Shape parsing endpoint
+                geojson_input = json.dumps({
+                    "type": "FeatureCollection",
+                    "features": [{
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [[[0,0], [100,0], [100,100], [0,100], [0,0]]]
+                        }
+                    }]
+                }).encode('utf-8')
+                parsed_shape = request(base, '/api/shapes/parse', 'POST', geojson_input, dict(headers, **{'Content-Type': 'application/json'}))
+                assert parsed_shape['schema'] == 'sister.image.shape/1.0.0'
+                assert len(parsed_shape['geojson']['features']) == 1
+
+                # Test Job Clipping endpoint
+                clip_res = request(base, f"/api/jobs/{job['id']}/clip", 'POST', geojson_input, dict(headers, **{'Content-Type': 'application/json'}))
+                assert clip_res['schema'] == 'sister.image.clip_result/1.0.0'
+                assert request(base, f"/api/jobs/{job['id']}/clipped_preview.pgm", headers=headers).startswith(b'P5\n')
+
                 # Streaming upload round-trip, using a real TIFF as input.
                 uploaded=request(base,'/api/classify?window=32&mode=patches','POST',data,dict(headers,**{'Content-Type':'image/tiff'}),202)
                 for _ in range(100):
