@@ -278,16 +278,10 @@ async function renderLeafletMap(geojson) {
     finalFitBounds = rasterLatLngBounds;
   }
 
-  if (currentJob && canvas && canvas.width > 0) {
+  if (currentJob && canvas && canvas.width > 0 && rasterLatLngBounds && rasterLatLngBounds.isValid && rasterLatLngBounds.isValid()) {
     try {
-      let imageBounds = rasterLatLngBounds;
-      if (!imageBounds && leafletGeoJsonLayer) {
-        imageBounds = leafletGeoJsonLayer.getBounds();
-      }
-      if (imageBounds && imageBounds.isValid && imageBounds.isValid()) {
-        const dataUrl = canvas.toDataURL('image/png');
-        leafletRasterOverlay = L.imageOverlay(dataUrl, imageBounds, { opacity: 0.85 }).addTo(leafletInstance);
-      }
+      const dataUrl = canvas.toDataURL('image/png');
+      leafletRasterOverlay = L.imageOverlay(dataUrl, rasterLatLngBounds, { opacity: 0.85 }).addTo(leafletInstance);
     } catch (e) {}
   }
 

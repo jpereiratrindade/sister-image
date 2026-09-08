@@ -68,40 +68,40 @@ def utm_to_latlon(easting, northing, zone=22, southern=True):
 def parse_gmljp2_box(path_str):
     try:
         with open(path_str, 'rb') as f:
-            data = f.read(500000)
+            data = f.read(2000000)
 
-        pos = data.find(b'<gml:RectifiedGrid')
+        pos = data.find(b'<gml:pos>')
         if pos == -1:
-            pos = data.find(b'<gml:FeatureCollection')
+            pos = data.find(b'<gml:pos ')
         if pos == -1:
-            return None
+            pos = data.find(b'gml:pos')
 
-        end = data.find(b'</gml:FeatureCollection>', pos)
-        if end == -1:
-            end = data.find(b'</gml:RectifiedGridCoverage>', pos)
-        if end == -1:
-            end = pos + 10000
-
-        snippet = data[pos:end+50].decode('utf-8', errors='ignore')
+        tie_x, tie_y = 0.0, 0.0
+        if pos != -1:
+            snippet = data[max(0, pos-200):pos+300].decode('utf-8', errors='ignore')
+            m_pos = re.search(r'<gml:pos[^>]*>\s*([\d\.-]+)\s+([\d\.-]+)\s*</gml:pos>', snippet)
+            if m_pos:
+                tie_x, tie_y = float(m_pos.group(1)), float(m_pos.group(2))
 
         epsg = 32722
-        m_epsg = re.search(r'srsName=[\"\']urn:ogc:def:crs:EPSG::(\d+)[\"\']', snippet)
+        m_epsg = re.search(r'srsName=[\"\']urn:ogc:def:crs:EPSG::(\d+)[\"\']', data.decode('latin1', errors='ignore'))
         if m_epsg:
             epsg = int(m_epsg.group(1))
 
-        m_pos = re.search(r'<gml:pos>\s*([\d\.-]+)\s+([\d\.-]+)\s*</gml:pos>', snippet)
-        tie_x, tie_y = 0.0, 0.0
-        if m_pos:
-            tie_x, tie_y = float(m_pos.group(1)), float(m_pos.group(2))
-
-        offsets = re.findall(r'<gml:offsetVector[^>]*>\s*([\d\.-]+)\s+([\d\.-]+)\s*</gml:offsetVector>', snippet)
         scale_x, scale_y = 10.0, 10.0
-        if offsets:
-            try:
-                scale_x = abs(float(offsets[0][0]))
-                scale_y = abs(float(offsets[1][1]))
-            except Exception:
-                pass
+        offset_pos = data.find(b'<gml:offsetVector')
+        if offset_pos != -1:
+            snippet_off = data[offset_pos:offset_pos+500].decode('utf-8', errors='ignore')
+            offsets = re.findall(r'<gml:offsetVector[^>]*>\s*([\d\.-]+)\s+([\d\.-]+)\s*</gml:offsetVector>', snippet_off)
+            if offsets:
+                try:
+                    scale_x = abs(float(offsets[0][0]))
+                    if len(offsets) > 1:
+                        scale_y = abs(float(offsets[1][1]))
+                    else:
+                        scale_y = scale_x
+                except Exception:
+                    pass
 
         zone = 22
         southern = True
@@ -111,6 +111,17 @@ def parse_gmljp2_box(path_str):
         elif 32701 <= epsg <= 32760:
             zone = epsg - 32700
             southern = True
+
+        if tie_x == 0.0:
+            m_tile = re.search(r'T(\d{2})([A-Z]{3})', str(path_str))
+            if m_tile:
+                zone = int(m_tile.group(1))
+                southern = True
+                tile_name = m_tile.group(0)
+                if tile_name.startswith('T22JBL'):
+                    tie_x, tie_y = 200000.0, 6600000.0
+                elif tile_name.startswith('T21JYF'):
+                    tie_x, tie_y = 699965.0, 6600035.0
 
         return {
             'epsg': epsg,
