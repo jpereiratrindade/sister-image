@@ -263,14 +263,26 @@ int main(int argc, char** argv) {
             }
         });
 
-        // Endpoint autônomo para inspeção de imagens raster
-        server.Post("/api/raster/inspect", [&](const httplib::Request& req, httplib::Response& res) {
+        // Endpoint autônomo para inspeção de imagens raster (GeoTIFF e Sentinel JP2)
+        server.Post("/api/raster/inspect", [&](const httplib::Request& req, httplib::Response& res, const httplib::ContentReader& reader) {
             if (!authorized(req, res)) return;
             try {
-                const auto temp_path = root / ("temp_raster_inspect_" + identifier() + ".tif");
+                std::string fname = req.has_param("name") ? req.get_param_value("name") : (req.has_header("X-File-Name") ? req.get_header_value("X-File-Name") : "");
+                std::string ext = fs::path(fname).extension().string();
+                if (ext.empty()) ext = ".tif";
+                const auto temp_path = root / ("temp_raster_inspect_" + identifier() + ext);
                 std::ofstream temp(temp_path, std::ios::binary);
-                temp.write(req.body.data(), req.body.size());
+                std::size_t bytes = 0;
+                bool ok = reader([&](const char* ptr, std::size_t n) {
+                    bytes += n;
+                    if (bytes > 1024ULL * 1024 * 1024) return false;
+                    temp.write(ptr, n); return bool(temp);
+                });
                 temp.close();
+                if (!ok || bytes < 8) {
+                    fs::remove(temp_path);
+                    throw std::invalid_argument("Payload de imagem raster invalido ou vazio");
+                }
                 Json info;
                 try { info = inspect_raster(temp_path); }
                 catch (...) { fs::remove(temp_path); throw; }
@@ -327,8 +339,7 @@ int main(int argc, char** argv) {
                     save_json(dir / "status.json", {{"schema", "sister.image.job/1.0.0"}, {"id", id}, {"status", "uploading"}, {"created_at", now()}, {"configuration", options}});
                 }
                 if (reader) {
-                    if (req.get_header_value("Content-Type") != "image/tiff" && req.get_header_value("Content-Type") != "application/octet-stream") throw std::invalid_argument("Envie TIFF binario");
-                    std::ofstream file(dir / "input.tif", std::ios::binary);
+                    std::ofstream file(dir / "temp_input.raw", std::ios::binary);
                     std::size_t bytes = 0;
                     bool ok = (*reader)([&](const char* ptr, std::size_t n) {
                         bytes += n;
@@ -337,6 +348,30 @@ int main(int argc, char** argv) {
                     });
                     file.close();
                     if (!ok || !file || bytes < 8) throw std::invalid_argument("Upload incompleto, vazio ou superior a 1 GiB");
+
+                    std::string fname = req.has_param("name") ? req.get_param_value("name") : (req.has_header("X-File-Name") ? req.get_header_value("X-File-Name") : "");
+                    bool is_jp2 = fname.ends_with(".jp2") || fname.ends_with(".j2k");
+                    if (!is_jp2 && bytes >= 8) {
+                        std::ifstream chk(dir / "temp_input.raw", std::ios::binary);
+                        char magic[8];
+                        if (chk.read(magic, 8)) {
+                            if ((magic[0] == 0x00 && magic[1] == 0x00 && magic[2] == 0x00 && magic[3] == 0x0c) ||
+                                (static_cast<unsigned char>(magic[0]) == 0xff && static_cast<unsigned char>(magic[1]) == 0x4f)) {
+                                is_jp2 = true;
+                            }
+                        }
+                    }
+
+                    if (is_jp2) {
+                        std::string cmd = "python3 scripts/jp2_converter.py convert \"" + (dir / "temp_input.raw").string() + "\" \"" + (dir / "input.tif").string() + "\"";
+                        int res = std::system(cmd.c_str());
+                        fs::remove(dir / "temp_input.raw");
+                        if (res != 0 || !fs::exists(dir / "input.tif")) {
+                            throw std::invalid_argument("Falha ao converter imagem Sentinel JP2 para TIFF");
+                        }
+                    } else {
+                        fs::rename(dir / "temp_input.raw", dir / "input.tif");
+                    }
                 } else make_demo(dir / "input.tif");
                 Json status = {{"schema", "sister.image.job/1.0.0"}, {"id", id}, {"status", "running"}, {"created_at", now()}, {"configuration", options}};
                 { std::lock_guard guard(state_mutex); save_json(dir / "status.json", status); }

@@ -355,14 +355,15 @@ async function handleVectorUpload(file) {
   }
 }
 
-// INHERENT RASTER TOOL: Inspect GeoTIFF Metadata
+// INHERENT RASTER TOOL: Inspect GeoTIFF / Sentinel JP2 Metadata
 async function handleRasterInspect(file) {
   if (!file) return;
   if ($('raster-filename')) $('raster-filename').textContent = file.name;
-  statusMessage('Inspecionando metadados do GeoTIFF…');
+  statusMessage('Inspecionando metadados da imagem raster…');
 
   try {
-    const response = await api('api/raster/inspect', { method: 'POST', body: file });
+    const headers = { 'X-File-Name': file.name };
+    const response = await api('api/raster/inspect', { method: 'POST', headers, body: file });
     const data = await response.json();
     currentRasterInfo = data.info;
 
@@ -376,9 +377,9 @@ async function handleRasterInspect(file) {
     if ($('raster-info-card')) $('raster-info-card').hidden = false;
     if ($('clip-raster-name')) $('clip-raster-name').textContent = file.name;
 
-    statusMessage(`GeoTIFF "${file.name}" inspecionado. ${currentRasterInfo.width} × ${currentRasterInfo.height} px, ${currentRasterInfo.channels} canais.`);
+    statusMessage(`Raster "${file.name}" inspecionado. ${currentRasterInfo.width} × ${currentRasterInfo.height} px, ${currentRasterInfo.channels} canais.`);
   } catch (e) {
-    statusMessage('Falha ao inspecionar GeoTIFF: ' + e.message, true);
+    statusMessage('Falha ao inspecionar raster: ' + e.message, true);
   }
 }
 
@@ -515,19 +516,21 @@ async function refreshJobs() {
 async function submitClassification(demo = false) {
   if (!demo && $('classify-form') && !$('classify-form').reportValidity()) return;
   const file = $('classify-file') ? $('classify-file').files[0] : null;
-  if (!demo && !file) { statusMessage('Escolha uma imagem TIFF para classificar.', true); return; }
+  if (!demo && !file) { statusMessage('Escolha uma imagem TIFF ou Sentinel JP2 para classificar.', true); return; }
 
   setWorking(true);
   if ($('result-bar')) $('result-bar').hidden = true;
   if ($('viewport-canvas')) $('viewport-canvas').hidden = true;
   if ($('viewport-empty')) $('viewport-empty').hidden = false;
-  statusMessage(demo ? 'Executando demonstração sintética…' : 'Enviando imagem TIFF…');
+  statusMessage(demo ? 'Executando demonstração sintética…' : `Enviando imagem ${file ? file.name : ''}…`);
   if ($('state-badge')) $('state-badge').textContent = 'Enviando';
 
   try {
-    const response = await api(`${demo ? 'api/demo' : 'api/classify'}?${getClassifyParams()}`, {
+    const nameParam = file ? `&name=${encodeURIComponent(file.name)}` : '';
+    const headers = demo ? {} : { 'X-File-Name': file.name, 'Content-Type': 'application/octet-stream' };
+    const response = await api(`${demo ? 'api/demo' : 'api/classify'}?${getClassifyParams()}${nameParam}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'image/tiff' },
+      headers,
       body: demo ? null : file
     });
     await showJobResults(await response.json());

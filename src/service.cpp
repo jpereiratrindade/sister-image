@@ -153,6 +153,36 @@ ClipResult clip_job(const std::filesystem::path& directory, const VectorShape& s
 }
 
 Json inspect_raster(const std::filesystem::path& path) {
+    std::string ext = path.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    bool is_jp2 = (ext == ".jp2" || ext == ".j2k");
+    if (!is_jp2) {
+        std::ifstream chk(path, std::ios::binary);
+        char magic[8];
+        if (chk.read(magic, 8)) {
+            if ((magic[0] == 0x00 && magic[1] == 0x00 && magic[2] == 0x00 && magic[3] == 0x0c) ||
+                (static_cast<unsigned char>(magic[0]) == 0xff && static_cast<unsigned char>(magic[1]) == 0x4f)) {
+                is_jp2 = true;
+            }
+        }
+    }
+
+    if (is_jp2) {
+        std::string cmd = "python3 scripts/jp2_converter.py inspect \"" + path.string() + "\"";
+        FILE* pipe = popen(cmd.c_str(), "r");
+        if (pipe) {
+            std::string result;
+            char buffer[512];
+            while (fgets(buffer, sizeof(buffer), pipe)) result += buffer;
+            pclose(pipe);
+            if (!result.empty() && result.starts_with("{")) {
+                auto j = Json::parse(result);
+                j["digest"] = digest(path);
+                return j;
+            }
+        }
+    }
+
     std::unique_ptr<TIFF, decltype(&TIFFClose)> tif(sister_image::open_tiff(path.c_str(), "r"), TIFFClose);
     if (!tif) throw std::runtime_error("Nao foi possivel abrir imagem TIFF para inspecao");
     std::uint32_t width{}, height{};

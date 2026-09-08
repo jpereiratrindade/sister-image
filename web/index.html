@@ -94,9 +94,9 @@
 
           <label class="drop-zone" id="raster-drop" for="raster-file">
             <span class="drop-icon">🖼</span>
-            <strong id="raster-filename">Escolha ou arraste um GeoTIFF</strong>
-            <small>TIFF / BigTIFF / GeoTIFF · até 1 GiB</small>
-            <input id="raster-file" type="file" accept=".tif,.tiff,image/tiff">
+            <strong id="raster-filename">Escolha ou arraste GeoTIFF ou Sentinel JP2</strong>
+            <small>TIFF / GeoTIFF / Sentinel JP2 (.jp2, .j2k) · até 1 GiB</small>
+            <input id="raster-file" type="file" accept=".tif,.tiff,.jp2,.j2k,image/tiff,image/jp2">
           </label>
 
           <div id="raster-info-card" class="metrics-card" hidden>
@@ -126,9 +126,9 @@
 
             <label class="drop-zone" id="classify-drop" for="classify-file">
               <span class="drop-icon">↥</span>
-              <strong id="classify-filename">Escolha a Imagem TIFF</strong>
-              <small>TIFF / GeoTIFF para classificação</small>
-              <input id="classify-file" type="file" accept=".tif,.tiff,image/tiff">
+              <strong id="classify-filename">Escolha a Imagem TIFF ou Sentinel JP2</strong>
+              <small>TIFF / GeoTIFF / Sentinel-2 (.jp2)</small>
+              <input id="classify-file" type="file" accept=".tif,.tiff,.jp2,.j2k,image/tiff,image/jp2">
             </label>
             <button type="button" class="text-button" id="demo-btn">Usar imagem sintética de demonstração ↗</button>
 
