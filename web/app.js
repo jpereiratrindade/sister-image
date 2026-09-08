@@ -431,7 +431,7 @@ async function renderLeafletMap(geojson) {
 
       const scaleStr = scale >= 1000000 ? (scale / 1000000).toFixed(1) + 'M' : Math.round(scale).toLocaleString('pt-BR');
       const resStr = res < 1.0 ? `${(res * 100).toFixed(0)} cm/px` : `${res.toFixed(1)} m/px`;
-      const isNativeSentinel = res <= 10.5;
+      const isNativeSentinel = scale <= 20000;
       const badge = isNativeSentinel
         ? `<span style="background:rgba(16,185,129,0.2);color:#34d399;padding:1px 6px;border-radius:4px;font-weight:600;font-size:10px;">🔍 1:1 Pixel (10m)</span>`
         : `<span style="background:rgba(148,163,184,0.15);color:#94a3b8;padding:1px 6px;border-radius:4px;font-size:10px;">🌐 Visão Geral</span>`;
@@ -460,7 +460,8 @@ async function renderLeafletMap(geojson) {
           const zoom = leafletInstance.getZoom();
           const lat = leafletInstance.getCenter().lat;
           const res = (156543.03392 * Math.cos(lat * Math.PI / 180.0)) / Math.pow(2, zoom);
-          if (res <= 10.5 || currentActiveRasterMode === 'clipped') {
+          const scale = res * 3779.527559;
+          if (scale <= 20000 || currentActiveRasterMode === 'clipped') {
             el.classList.add('pixelated-layer');
           } else {
             el.classList.remove('pixelated-layer');

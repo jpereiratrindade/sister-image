@@ -132,13 +132,17 @@ ClipResult clip_raster(const ClipConfig& config) {
     if (!in_tif) throw std::runtime_error("Nao foi possivel abrir imagem TIFF para recorte");
 
     std::uint32_t width{}, height{};
-    std::uint16_t spp{}, bps{}, photo{}, planar{};
+    std::uint16_t spp{1}, bps{8}, photo{0}, planar{PLANARCONFIG_CONTIG};
     TIFFGetField(in_tif.get(), TIFFTAG_IMAGEWIDTH, &width);
     TIFFGetField(in_tif.get(), TIFFTAG_IMAGELENGTH, &height);
     TIFFGetField(in_tif.get(), TIFFTAG_SAMPLESPERPIXEL, &spp);
     TIFFGetField(in_tif.get(), TIFFTAG_BITSPERSAMPLE, &bps);
     TIFFGetField(in_tif.get(), TIFFTAG_PHOTOMETRIC, &photo);
     TIFFGetField(in_tif.get(), TIFFTAG_PLANARCONFIG, &planar);
+
+    if (spp == 0) spp = 1;
+    if (bps == 0) bps = 8;
+    if (planar == 0) planar = PLANARCONFIG_CONTIG;
 
     if (bps != 8 || planar != PLANARCONFIG_CONTIG) {
         throw std::invalid_argument("Apenas TIFF uint8 contiguo e suportado para recorte");
