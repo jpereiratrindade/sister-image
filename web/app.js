@@ -398,28 +398,80 @@ async function renderLeafletMap(geojson) {
     };
 
     L.control.layers(baseMaps, null, { position: 'topright' }).addTo(leafletInstance);
+    L.control.scale({ imperial: false, position: 'bottomleft', maxWidth: 160 }).addTo(leafletInstance);
 
     const coordsControl = L.control({ position: 'bottomright' });
     coordsControl.onAdd = function() {
       const div = L.DomUtil.create('div', 'leaflet-coords-box');
-      div.style.background = 'rgba(11, 19, 41, 0.9)';
-      div.style.color = '#06b6d4';
-      div.style.padding = '5px 12px';
-      div.style.fontSize = '12px';
+      div.style.background = 'rgba(11, 19, 41, 0.92)';
+      div.style.color = '#e2e8f0';
+      div.style.padding = '6px 14px';
+      div.style.fontSize = '11px';
       div.style.fontFamily = 'monospace';
       div.style.borderRadius = '6px';
       div.style.border = '1px solid #26354a';
-      div.innerHTML = 'Lat: - | Lon: -';
+      div.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
+      div.style.lineHeight = '1.4';
+      div.innerHTML = '<span style="color:#94a3b8">Carregando escala cartográfica…</span>';
       return div;
     };
     coordsControl.addTo(leafletInstance);
 
-    leafletInstance.on('mousemove', function(e) {
+    const updateScaleAndCoords = (latlng) => {
       const box = document.querySelector('.leaflet-coords-box');
-      if (box) {
-        box.textContent = `Lat: ${e.latlng.lat.toFixed(5)} | Lon: ${e.latlng.lng.toFixed(5)}`;
+      if (!box || !leafletInstance) return;
+      const lat = latlng ? latlng.lat : leafletInstance.getCenter().lat;
+      const lon = latlng ? latlng.lng : leafletInstance.getCenter().lng;
+      const zoom = leafletInstance.getZoom();
+
+      // Ground resolution in meters per pixel in Web Mercator (EPSG:3857)
+      const res = (156543.03392 * Math.cos(lat * Math.PI / 180.0)) / Math.pow(2, zoom);
+      // Cartographic scale denominator at standard 96 DPI screen
+      const scale = res * 3779.527559;
+
+      const scaleStr = scale >= 1000000 ? (scale / 1000000).toFixed(1) + 'M' : Math.round(scale).toLocaleString('pt-BR');
+      const resStr = res < 1.0 ? `${(res * 100).toFixed(0)} cm/px` : `${res.toFixed(1)} m/px`;
+      const isNativeSentinel = res <= 10.5;
+      const badge = isNativeSentinel
+        ? `<span style="background:rgba(16,185,129,0.2);color:#34d399;padding:1px 6px;border-radius:4px;font-weight:600;font-size:10px;">🔍 1:1 Pixel (10m)</span>`
+        : `<span style="background:rgba(148,163,184,0.15);color:#94a3b8;padding:1px 6px;border-radius:4px;font-size:10px;">🌐 Visão Geral</span>`;
+
+      box.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:3px;">
+          <span>📏 Escala: <strong style="color:#f8fafc">1:${scaleStr}</strong></span>
+          <span style="color:#64748b">•</span>
+          <span>📐 Resolução: <strong style="color:#f8fafc">${resStr}</strong> (Z${zoom})</span>
+          ${badge}
+        </div>
+        <div style="color:#06b6d4;font-size:11px;">
+          Lat: ${lat.toFixed(5)} | Lon: ${lon.toFixed(5)}
+        </div>
+      `;
+    };
+
+    leafletInstance.on('mousemove', function(e) {
+      updateScaleAndCoords(e.latlng);
+    });
+    leafletInstance.on('zoomend', function() {
+      updateScaleAndCoords(null);
+      if (leafletRasterOverlay && leafletRasterOverlay.getElement) {
+        const el = leafletRasterOverlay.getElement();
+        if (el) {
+          const zoom = leafletInstance.getZoom();
+          const lat = leafletInstance.getCenter().lat;
+          const res = (156543.03392 * Math.cos(lat * Math.PI / 180.0)) / Math.pow(2, zoom);
+          if (res <= 10.5 || currentActiveRasterMode === 'clipped') {
+            el.classList.add('pixelated-layer');
+          } else {
+            el.classList.remove('pixelated-layer');
+          }
+        }
       }
     });
+    leafletInstance.on('moveend', function() {
+      updateScaleAndCoords(null);
+    });
+    updateScaleAndCoords(null);
   }
 
   if (!leafletInstance.getPane('rasterPane')) {
@@ -494,7 +546,11 @@ async function renderLeafletMap(geojson) {
   if (currentJob && canvas && canvas.width > 0 && rasterLatLngBounds && rasterLatLngBounds.isValid && rasterLatLngBounds.isValid()) {
     try {
       const dataUrl = canvas.toDataURL('image/png');
-      leafletRasterOverlay = L.imageOverlay(dataUrl, rasterLatLngBounds, { pane: 'rasterPane', opacity: 0.95 }).addTo(leafletInstance);
+      leafletRasterOverlay = L.imageOverlay(dataUrl, rasterLatLngBounds, {
+        pane: 'rasterPane',
+        opacity: 0.95,
+        className: currentActiveRasterMode === 'clipped' ? 'clipped-layer pixelated-layer' : ''
+      }).addTo(leafletInstance);
     } catch (e) {}
   }
 
