@@ -422,8 +422,11 @@ canvas {
 
 .leaflet-rasterPane-pane img,
 .leaflet-image-layer {
-  image-rendering: -webkit-optimize-contrast !important;
-  image-rendering: crisp-edges !important;
+  image-rendering: auto;
+}
+
+.leaflet-rasterPane-pane img.clipped-layer,
+.leaflet-image-layer.pixelated-layer {
   image-rendering: pixelated !important;
 }
 
