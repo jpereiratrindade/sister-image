@@ -216,18 +216,23 @@ ClipResult clip_raster(const ClipConfig& config) {
 
     std::size_t col_min = 0, row_min = 0, col_max = width - 1, row_max = height - 1;
     if (!px_shape.polygons.empty()) {
-        col_min = std::clamp<std::size_t>(std::floor(px_shape.min_x), 0, width - 1);
-        row_min = std::clamp<std::size_t>(std::floor(px_shape.min_y), 0, height - 1);
-        col_max = std::clamp<std::size_t>(std::ceil(px_shape.max_x), 0, width - 1);
-        row_max = std::clamp<std::size_t>(std::ceil(px_shape.max_y), 0, height - 1);
-    }
-
-    if (col_min > col_max || row_min > row_max) {
-        throw std::invalid_argument("Poligono de recorte esta fora dos limites do raster");
+        long long c_min = std::clamp<long long>(std::floor(px_shape.min_x), 0, static_cast<long long>(width) - 1);
+        long long r_min = std::clamp<long long>(std::floor(px_shape.min_y), 0, static_cast<long long>(height) - 1);
+        long long c_max = std::clamp<long long>(std::ceil(px_shape.max_x), 0, static_cast<long long>(width) - 1);
+        long long r_max = std::clamp<long long>(std::ceil(px_shape.max_y), 0, static_cast<long long>(height) - 1);
+        if (px_shape.max_x < 0 || px_shape.min_x >= width || px_shape.max_y < 0 || px_shape.min_y >= height || c_min > c_max || r_min > r_max) {
+            throw std::invalid_argument("Poligono de recorte esta totalmente fora dos limites do raster");
+        }
+        col_min = static_cast<std::size_t>(c_min);
+        row_min = static_cast<std::size_t>(r_min);
+        col_max = static_cast<std::size_t>(c_max);
+        row_max = static_cast<std::size_t>(r_max);
     }
 
     std::size_t out_w = col_max - col_min + 1;
     std::size_t out_h = row_max - row_min + 1;
+    std::size_t sample_bytes = bps / 8;
+    if (sample_bytes == 0) sample_bytes = 1;
 
     std::unique_ptr<TIFF, decltype(&TIFFClose)> out_tif(
         sister_image::open_tiff(config.output_tiff.c_str(), "w8"), TIFFClose);
@@ -236,7 +241,7 @@ ClipResult clip_raster(const ClipConfig& config) {
     TIFFSetField(out_tif.get(), TIFFTAG_IMAGEWIDTH, static_cast<uint32_t>(out_w));
     TIFFSetField(out_tif.get(), TIFFTAG_IMAGELENGTH, static_cast<uint32_t>(out_h));
     TIFFSetField(out_tif.get(), TIFFTAG_SAMPLESPERPIXEL, spp);
-    TIFFSetField(out_tif.get(), TIFFTAG_BITSPERSAMPLE, 8);
+    TIFFSetField(out_tif.get(), TIFFTAG_BITSPERSAMPLE, bps);
     TIFFSetField(out_tif.get(), TIFFTAG_PHOTOMETRIC, photo);
     TIFFSetField(out_tif.get(), TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
     TIFFSetField(out_tif.get(), TIFFTAG_ROWSPERSTRIP, std::min<uint32_t>(16, out_h));
@@ -255,8 +260,9 @@ ClipResult clip_raster(const ClipConfig& config) {
         TIFFSetField(out_tif.get(), kGeoKeyDirectoryTag, key_count, key_ptr);
     }
 
-    std::vector<uint8_t> in_row(width * spp);
-    std::vector<uint8_t> out_row(out_w * spp);
+    const std::size_t pixel_size_bytes = spp * sample_bytes;
+    std::vector<uint8_t> in_row(width * pixel_size_bytes);
+    std::vector<uint8_t> out_row(out_w * pixel_size_bytes);
 
     for (std::size_t y = row_min; y <= row_max; ++y) {
         if (TIFFReadScanline(in_tif.get(), in_row.data(), static_cast<uint32_t>(y)) < 0) {
@@ -270,12 +276,12 @@ ClipResult clip_raster(const ClipConfig& config) {
             if (config.mask_outside && !px_shape.polygons.empty()) {
                 keep = px_shape.contains(static_cast<double>(x), static_cast<double>(y));
             }
-            for (std::size_t c = 0; c < spp; ++c) {
-                if (keep) {
-                    out_row[out_x * spp + c] = in_row[x * spp + c];
-                } else {
-                    out_row[out_x * spp + c] = config.nodata_val;
-                }
+            std::size_t src_offset = x * pixel_size_bytes;
+            std::size_t dst_offset = out_x * pixel_size_bytes;
+            if (keep) {
+                std::memcpy(&out_row[dst_offset], &in_row[src_offset], pixel_size_bytes);
+            } else {
+                std::memset(&out_row[dst_offset], static_cast<int>(config.nodata_val), pixel_size_bytes);
             }
         }
 
