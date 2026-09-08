@@ -609,13 +609,17 @@ async function executeSpatialClip() {
       const zone = currentRasterInfo ? (currentRasterInfo.zone || 22) : 22;
       const southern = currentRasterInfo ? (currentRasterInfo.southern !== false) : true;
 
-      const pt1 = utmToLatLon(minX, maxY, zone, southern);
-      const pt2 = utmToLatLon(maxX, minY, zone, southern);
+      const c1 = utmToLatLon(minX, maxY, zone, southern);
+      const c2 = utmToLatLon(maxX, maxY, zone, southern);
+      const c3 = utmToLatLon(minX, minY, zone, southern);
+      const c4 = utmToLatLon(maxX, minY, zone, southern);
+      const lats = [c1.lat, c2.lat, c3.lat, c4.lat];
+      const lons = [c1.lon, c2.lon, c3.lon, c4.lon];
       currentClippedInfo = {
         ...data.result,
         latlon_bounds: [
-          Math.min(pt1.lat, pt2.lat), Math.min(pt1.lon, pt2.lon),
-          Math.max(pt1.lat, pt2.lat), Math.max(pt1.lon, pt2.lon)
+          Math.min(...lats), Math.min(...lons),
+          Math.max(...lats), Math.max(...lons)
         ]
       };
     }

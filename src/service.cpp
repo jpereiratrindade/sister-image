@@ -275,14 +275,18 @@ Json inspect_raster(const std::filesystem::path& path) {
         double max_x = tie[3] + width * scale[0];
         double min_y = tie[4] - height * scale[1];
 
-        double lat1 = 0, lon1 = 0, lat2 = 0, lon2 = 0;
+        double lat1 = 0, lon1 = 0, lat2 = 0, lon2 = 0, lat3 = 0, lon3 = 0, lat4 = 0, lon4 = 0;
         utm_to_latlon(min_x, max_y, lat1, lon1, zone, southern);
-        utm_to_latlon(max_x, min_y, lat2, lon2, zone, southern);
+        utm_to_latlon(max_x, max_y, lat2, lon2, zone, southern);
+        utm_to_latlon(min_x, min_y, lat3, lon3, zone, southern);
+        utm_to_latlon(max_x, min_y, lat4, lon4, zone, southern);
 
-        res["latlon_bounds"] = {
-            std::min(lat1, lat2), std::min(lon1, lon2),
-            std::max(lat1, lat2), std::max(lon1, lon2)
-        };
+        double min_lat = std::min({lat1, lat2, lat3, lat4});
+        double max_lat = std::max({lat1, lat2, lat3, lat4});
+        double min_lon = std::min({lon1, lon2, lon3, lon4});
+        double max_lon = std::max({lon1, lon2, lon3, lon4});
+
+        res["latlon_bounds"] = { min_lat, min_lon, max_lat, max_lon };
         res["spatial_extent_utm"] = {min_x, min_y, max_x, max_y};
         res["crs"] = "EPSG:" + std::to_string(southern ? 32700 + zone : 32600 + zone) + " (UTM zone " + std::to_string(zone) + (southern ? "S" : "N") + ")";
         res["zone"] = zone;

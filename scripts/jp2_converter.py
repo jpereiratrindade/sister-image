@@ -186,11 +186,15 @@ def inspect_jp2(path):
     latlon_bounds = None
     if tie_x > 1000 and tie_y > 1000:
         try:
-            lat1, lon1 = utm_to_latlon(min_x, max_y, zone=zone, southern=southern)
-            lat2, lon2 = utm_to_latlon(max_x, min_y, zone=zone, southern=southern)
+            c1 = utm_to_latlon(min_x, max_y, zone=zone, southern=southern)
+            c2 = utm_to_latlon(max_x, max_y, zone=zone, southern=southern)
+            c3 = utm_to_latlon(min_x, min_y, zone=zone, southern=southern)
+            c4 = utm_to_latlon(max_x, min_y, zone=zone, southern=southern)
+            lats = [c1[0], c2[0], c3[0], c4[0]]
+            lons = [c1[1], c2[1], c3[1], c4[1]]
             latlon_bounds = [
-                min(lat1, lat2), min(lon1, lon2),
-                max(lat1, lat2), max(lon1, lon2)
+                min(lats), min(lons),
+                max(lats), max(lons)
             ]
         except Exception:
             pass
