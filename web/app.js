@@ -168,7 +168,7 @@ function renderLeafletMap(geojson) {
   if ($('viewport-empty')) $('viewport-empty').hidden = true;
 
   if (typeof L === 'undefined') {
-    statusMessage('Biblioteca Leaflet não disponível (modo offline). Usando canvas.', true);
+    statusMessage('Biblioteca Leaflet não disponível (modo offline). Usando 2D canvas.', true);
     if (canvas) canvas.hidden = false;
     container.hidden = true;
     renderStandaloneVector(geojson);
@@ -176,11 +176,56 @@ function renderLeafletMap(geojson) {
   }
 
   if (!leafletInstance) {
-    leafletInstance = L.map('leaflet-map').setView([-14.235, -51.925], 4);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and GIS Community'
+    });
+
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(leafletInstance);
+    });
+
+    const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    });
+
+    leafletInstance = L.map('leaflet-map', {
+      center: [-14.235, -51.925],
+      zoom: 4,
+      layers: [satellite]
+    });
+
+    const baseMaps = {
+      "🌐 Imagem de Satélite (Esri)": satellite,
+      "🗺️ Mapa Cartográfico (OpenStreetMap)": osm,
+      "🌙 Tema Escuro (CartoDB Dark)": dark
+    };
+
+    L.control.layers(baseMaps, null, { position: 'topright' }).addTo(leafletInstance);
+
+    const coordsControl = L.control({ position: 'bottomright' });
+    coordsControl.onAdd = function() {
+      const div = L.DomUtil.create('div', 'leaflet-coords-box');
+      div.style.background = 'rgba(11, 19, 41, 0.9)';
+      div.style.color = '#06b6d4';
+      div.style.padding = '5px 12px';
+      div.style.fontSize = '12px';
+      div.style.fontFamily = 'monospace';
+      div.style.borderRadius = '6px';
+      div.style.border = '1px solid #26354a';
+      div.innerHTML = 'Lat: - | Lon: -';
+      return div;
+    };
+    coordsControl.addTo(leafletInstance);
+
+    leafletInstance.on('mousemove', function(e) {
+      const box = document.querySelector('.leaflet-coords-box');
+      if (box) {
+        box.textContent = `Lat: ${e.latlng.lat.toFixed(5)} | Lon: ${e.latlng.lng.toFixed(5)}`;
+      }
+    });
   }
 
   if (leafletGeoJsonLayer) {
@@ -190,13 +235,23 @@ function renderLeafletMap(geojson) {
 
   if (geojson && geojson.features && geojson.features.length) {
     leafletGeoJsonLayer = L.geoJSON(geojson, {
-      style: { color: '#06b6d4', weight: 3, opacity: 0.9, fillColor: '#06b6d4', fillOpacity: 0.3 },
+      style: { color: '#06b6d4', weight: 3.5, opacity: 0.95, fillColor: '#06b6d4', fillOpacity: 0.35 },
       pointToLayer: (feat, latlng) => L.circleMarker(latlng, {
         radius: 8, fillColor: '#06b6d4', color: '#ffffff', weight: 2, opacity: 1, fillOpacity: 0.9
       }),
       onEachFeature: (feat, layer) => {
         const type = feat.geometry ? feat.geometry.type : 'Feature';
-        layer.bindPopup(`<strong>Geometria Vetorial</strong><br>Tipo: ${type}`);
+        let popupText = `<strong>Geometria Vetorial SisTer</strong><br>Tipo: ${type}`;
+        if (feat.geometry && feat.geometry.coordinates) {
+          if (type === 'Point') {
+            popupText += `<br>Coords: [${feat.geometry.coordinates[0].toFixed(5)}, ${feat.geometry.coordinates[1].toFixed(5)}]`;
+          } else if (type === 'LineString') {
+            popupText += `<br>Vértices: ${feat.geometry.coordinates.length}`;
+          } else if (type === 'Polygon' && feat.geometry.coordinates[0]) {
+            popupText += `<br>Vértices Anel Externo: ${feat.geometry.coordinates[0].length}`;
+          }
+        }
+        layer.bindPopup(popupText);
       }
     }).addTo(leafletInstance);
   }
@@ -294,7 +349,7 @@ async function handleVectorUpload(file) {
     }
 
     statusMessage(`Vetor "${file.name}" analisado. ${metrics.polygons_count} polígono(s), ${metrics.total_points} vértices.`);
-    await updateView('vector');
+    await updateView('leaflet');
   } catch (e) {
     statusMessage('Falha ao analisar arquivo vetorial: ' + e.message, true);
   }

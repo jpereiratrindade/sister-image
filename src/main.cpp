@@ -103,7 +103,7 @@ int main(int argc, char** argv) {
         server.set_write_timeout(30, 0);
         server.set_keep_alive_max_count(10);
         server.set_default_headers({{"X-Content-Type-Options", "nosniff"}, {"Referrer-Policy", "same-origin"},
-            {"Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://*.tile.openstreetmap.org https://*.tile.org; frame-ancestors 'self'; object-src 'none'; base-uri 'self'"}});
+            {"Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://*.tile.openstreetmap.org https://*.tile.org https://server.arcgisonline.com https://*.basemaps.cartocdn.com; frame-ancestors 'self'; object-src 'none'; base-uri 'self'"}});
         std::atomic<bool> busy{false};
         std::mutex state_mutex;
         std::thread worker;
@@ -355,11 +355,7 @@ int main(int argc, char** argv) {
         };
         server.Post("/api/classify", [&](const httplib::Request& req, httplib::Response& res, const httplib::ContentReader& reader) { submit(req, res, &reader); });
         server.Post("/api/demo", [&](const httplib::Request& req, httplib::Response& res) { submit(req, res, nullptr); });
-        for (const std::string name : {"index.html", "app.js", "style.css"}) {
-            server.Get(name == "index.html" ? "/" : "/" + name, [&, name](const auto&, auto& r) {
-                r.set_file_content((assets / name).string(), name == "index.html" ? "text/html; charset=utf-8" : name == "app.js" ? "text/javascript; charset=utf-8" : "text/css; charset=utf-8");
-            });
-        }
+        server.set_mount_point("/", assets.string());
         server.set_error_handler([](const auto&, auto& r) { if (r.body.empty()) error(r, r.status, "Rota ou requisicao invalida"); });
         server.set_exception_handler([](const auto&, auto& r, std::exception_ptr) { error(r, 500, "Falha interna; consulte a evidencia da execucao"); });
         
