@@ -42,25 +42,87 @@ function setWorking(value) {
   if ($('task-progress')) $('task-progress').hidden = !value;
 }
 
+function latlonToUtm(lat, lon, zone = 22, southern = true) {
+  const a = 6378137.0;
+  const f = 1 / 298.257223563;
+  const k0 = 0.9996;
+
+  const latRad = lat * Math.PI / 180;
+  const lonRad = lon * Math.PI / 180;
+
+  const centralMeridian = (zone - 1) * 6 - 180 + 3;
+  const lon0Rad = centralMeridian * Math.PI / 180;
+
+  const eSq = f * (2 - f);
+  const ePrimeSq = eSq / (1 - eSq);
+
+  const sinLat = Math.sin(latRad);
+  const cosLat = Math.cos(latRad);
+  const tanLat = Math.tan(latRad);
+
+  const N = a / Math.sqrt(1 - eSq * sinLat ** 2);
+  const T = tanLat ** 2;
+  const C = ePrimeSq * cosLat ** 2;
+  const A = (lonRad - lon0Rad) * cosLat;
+
+  const M = a * ((1 - eSq / 4 - 3 * eSq ** 2 / 64 - 5 * eSq ** 3 / 256) * latRad
+    - (3 * eSq / 8 + 3 * eSq ** 2 / 32 + 45 * eSq ** 3 / 1024) * Math.sin(2 * latRad)
+    + (15 * eSq ** 2 / 256 + 45 * eSq ** 3 / 1024) * Math.sin(4 * latRad)
+    - (35 * eSq ** 3 / 3072) * Math.sin(6 * latRad));
+
+  let easting = k0 * N * (A + (1 - T + C) * A ** 3 / 6 + (5 - 18 * T + T ** 2 + 72 * C - 58 * ePrimeSq) * A ** 5 / 120) + 500000.0;
+  let northing = k0 * (M + N * tanLat * (A ** 2 / 2 + (5 - T + 9 * C + 4 * C ** 2) * A ** 4 / 24 + (61 - 58 * T + T ** 2 + 600 * C - 330 * ePrimeSq) * A ** 6 / 720));
+
+  if (southern && northing < 0) {
+    northing += 10000000.0;
+  }
+
+  return { easting, northing };
+}
+
 // Draw vector polygon outlines and point markers on canvas
 function drawVectorOverlay(ctx, width, height, geojson) {
   if (!geojson || !geojson.features || !geojson.features.length) return;
+
   const bbox = geojson.bbox || [0, 0, width, height];
-  const minX = bbox[0], minY = bbox[1], maxX = bbox[2], maxY = bbox[3];
-  const diffX = maxX - minX;
-  const diffY = maxY - minY;
-  const rangeX = diffX > 1e-9 ? diffX : 1;
-  const rangeY = diffY > 1e-9 ? diffY : 1;
-  const pad = 40;
-  const availW = Math.max(10, width - pad * 2);
-  const availH = Math.max(10, height - pad * 2);
+  const isLatLon = (bbox[0] >= -180 && bbox[2] <= 180 && bbox[1] >= -90 && bbox[3] <= 90);
+  let mapX, mapY;
+
+  if (isLatLon && currentRasterInfo && currentRasterInfo.tie_x > 0 && currentRasterInfo.scale_x > 0) {
+    const tieX = currentRasterInfo.tie_x;
+    const tieY = currentRasterInfo.tie_y;
+    const scaleX = currentRasterInfo.scale_x;
+    const scaleY = currentRasterInfo.scale_y;
+    const zone = currentRasterInfo.zone || 22;
+
+    mapX = lonLat => {
+      const lon = lonLat[0], lat = lonLat[1];
+      const utm = latlonToUtm(lat, lon, zone, true);
+      const pxX = (utm.easting - tieX) / scaleX;
+      return (pxX / currentRasterInfo.width) * width;
+    };
+
+    mapY = lonLat => {
+      const lon = lonLat[0], lat = lonLat[1];
+      const utm = latlonToUtm(lat, lon, zone, true);
+      const pxY = (tieY - utm.northing) / scaleY;
+      return (pxY / currentRasterInfo.height) * height;
+    };
+  } else {
+    const minX = bbox[0], minY = bbox[1], maxX = bbox[2], maxY = bbox[3];
+    const diffX = maxX - minX > 1e-9 ? maxX - minX : 1;
+    const diffY = maxY - minY > 1e-9 ? maxY - minY : 1;
+    const pad = 40;
+    const availW = Math.max(10, width - pad * 2);
+    const availH = Math.max(10, height - pad * 2);
+
+    mapX = lonLat => (lonLat[0] - minX) / diffX * availW + pad;
+    mapY = lonLat => (maxY - lonLat[1]) / diffY * availH + pad;
+  }
 
   ctx.strokeStyle = '#06b6d4';
   ctx.fillStyle = 'rgba(6, 182, 212, 0.25)';
   ctx.lineWidth = 2;
-
-  const mapX = x => diffX > 1e-9 ? (x - minX) / rangeX * availW + pad : width / 2;
-  const mapY = y => diffY > 1e-9 ? (maxY - y) / rangeY * availH + pad : height / 2;
 
   for (const feat of geojson.features) {
     if (!feat.geometry) continue;
@@ -70,8 +132,8 @@ function drawVectorOverlay(ctx, width, height, geojson) {
       for (const ring of feat.geometry.coordinates) {
         ctx.beginPath();
         for (let i = 0; i < ring.length; i++) {
-          const px = mapX(ring[i][0]);
-          const py = mapY(ring[i][1]);
+          const px = mapX(ring[i]);
+          const py = mapY(ring[i]);
           if (i === 0) ctx.moveTo(px, py);
           else ctx.lineTo(px, py);
         }
@@ -82,15 +144,15 @@ function drawVectorOverlay(ctx, width, height, geojson) {
     } else if (gtype === 'LineString') {
       ctx.beginPath();
       for (let i = 0; i < feat.geometry.coordinates.length; i++) {
-        const px = mapX(feat.geometry.coordinates[i][0]);
-        const py = mapY(feat.geometry.coordinates[i][1]);
+        const px = mapX(feat.geometry.coordinates[i]);
+        const py = mapY(feat.geometry.coordinates[i]);
         if (i === 0) ctx.moveTo(px, py);
         else ctx.lineTo(px, py);
       }
       ctx.stroke();
     } else if (gtype === 'Point') {
-      const px = mapX(feat.geometry.coordinates[0]);
-      const py = mapY(feat.geometry.coordinates[1]);
+      const px = mapX(feat.geometry.coordinates);
+      const py = mapY(feat.geometry.coordinates);
 
       ctx.save();
       ctx.beginPath();

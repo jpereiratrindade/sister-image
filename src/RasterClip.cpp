@@ -19,6 +19,42 @@ namespace {
 constexpr std::uint32_t kModelPixelScaleTag = 33550;
 constexpr std::uint32_t kModelTiepointTag = 33922;
 constexpr std::uint32_t kGeoKeyDirectoryTag = 34735;
+
+static void latlon_to_utm(double lat, double lon, double& easting, double& northing, int zone = 22, bool southern = true) {
+    constexpr double a = 6378137.0;
+    constexpr double f = 1.0 / 298.257223563;
+    constexpr double k0 = 0.9996;
+
+    double lat_rad = lat * M_PI / 180.0;
+    double lon_rad = lon * M_PI / 180.0;
+
+    double central_meridian = (zone - 1) * 6.0 - 180.0 + 3.0;
+    double lon0_rad = central_meridian * M_PI / 180.0;
+
+    double e_sq = f * (2.0 - f);
+    double e_prime_sq = e_sq / (1.0 - e_sq);
+
+    double sin_lat = std::sin(lat_rad);
+    double cos_lat = std::cos(lat_rad);
+    double tan_lat = std::tan(lat_rad);
+
+    double N = a / std::sqrt(1.0 - e_sq * sin_lat * sin_lat);
+    double T = tan_lat * tan_lat;
+    double C = e_prime_sq * cos_lat * cos_lat;
+    double A = (lon_rad - lon0_rad) * cos_lat;
+
+    double M = a * ((1.0 - e_sq/4.0 - 3.0*e_sq*e_sq/64.0 - 5.0*e_sq*e_sq*e_sq/256.0) * lat_rad
+             - (3.0*e_sq/8.0 + 3.0*e_sq*e_sq/32.0 + 45.0*e_sq*e_sq*e_sq/1024.0) * std::sin(2.0*lat_rad)
+             + (15.0*e_sq*e_sq/256.0 + 45.0*e_sq*e_sq*e_sq/1024.0) * std::sin(4.0*lat_rad)
+             - (35.0*e_sq*e_sq*e_sq/3072.0) * std::sin(6.0*lat_rad));
+
+    easting = k0 * N * (A + (1.0 - T + C) * A*A*A / 6.0 + (5.0 - 18.0*T + T*T + 72.0*C - 58.0*e_prime_sq) * A*A*A*A*A / 120.0) + 500000.0;
+    northing = k0 * (M + N * tan_lat * (A*A / 2.0 + (5.0 - T + 9.0*C + 4.0*C*C) * A*A*A*A / 24.0 + (61.0 - 58.0*T + T*T + 600.0*C - 330.0*e_prime_sq) * A*A*A*A*A*A / 720.0));
+
+    if (southern && northing < 0.0) {
+        northing += 10000000.0;
+    }
+}
 }
 
 nlohmann::json ClipResult::to_json() const {
@@ -79,16 +115,28 @@ ClipResult clip_raster(const ClipConfig& config) {
 
     // Convert shape coordinates to pixel grid coordinates
     VectorShape px_shape = config.shape;
-    if (has_scale && has_tie && (px_shape.min_x < 0 || px_shape.max_x > width || px_shape.min_y < 0 || px_shape.max_y > height)) {
+    if (has_scale && has_tie && scale[0] > 0 && scale[1] > 0) {
+        bool is_latlon = (px_shape.min_x >= -180.0 && px_shape.max_x <= 180.0 && px_shape.min_y >= -90.0 && px_shape.max_y <= 90.0);
+        int zone = 22;
+        bool southern = true;
+
         for (auto& poly : px_shape.polygons) {
             for (auto& pt : poly.outer_ring) {
-                pt.x = (pt.x - tie[3]) / scale[0];
-                pt.y = (tie[4] - pt.y) / scale[1];
+                double e = pt.x, n = pt.y;
+                if (is_latlon) {
+                    latlon_to_utm(pt.y, pt.x, e, n, zone, southern);
+                }
+                pt.x = (e - tie[3]) / scale[0];
+                pt.y = (tie[4] - n) / scale[1];
             }
             for (auto& hole : poly.inner_rings) {
                 for (auto& pt : hole) {
-                    pt.x = (pt.x - tie[3]) / scale[0];
-                    pt.y = (tie[4] - pt.y) / scale[1];
+                    double e = pt.x, n = pt.y;
+                    if (is_latlon) {
+                        latlon_to_utm(pt.y, pt.x, e, n, zone, southern);
+                    }
+                    pt.x = (e - tie[3]) / scale[0];
+                    pt.y = (tie[4] - n) / scale[1];
                 }
             }
             poly.compute_bounds();
