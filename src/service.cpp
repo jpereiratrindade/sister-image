@@ -93,7 +93,7 @@ void original_preview(const std::filesystem::path& source, const std::filesystem
     if (sample_bytes == 0) sample_bytes = 1;
 
     const auto max_dim = std::max(width, height);
-    const auto step = std::max<std::uint32_t>(1, (max_dim + 2559) / 2560);
+    const auto step = std::max<std::uint32_t>(1, (max_dim + 4095) / 4096);
     const auto pw = (width + step - 1) / step, ph = (height + step - 1) / step;
     const bool is_rgb = (spp >= 3);
 

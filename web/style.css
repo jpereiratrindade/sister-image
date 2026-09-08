@@ -420,6 +420,13 @@ canvas {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
 }
 
+.leaflet-rasterPane-pane img,
+.leaflet-image-layer {
+  image-rendering: -webkit-optimize-contrast !important;
+  image-rendering: crisp-edges !important;
+  image-rendering: pixelated !important;
+}
+
 @media (max-width: 1024px) {
   .widescreen-workspace { grid-template-columns: 1fr; }
   .viewport-card { min-height: 480px; }
