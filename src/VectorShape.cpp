@@ -54,6 +54,39 @@ void Polygon2D::compute_bounds() {
     }
 }
 
+double Polygon2D::area() const {
+    if (outer_ring.size() < 3) return 0.0;
+    double a = 0.0;
+    std::size_t n = outer_ring.size();
+    for (std::size_t i = 0, j = n - 1; i < n; j = i++) {
+        a += (outer_ring[j].x * outer_ring[i].y) - (outer_ring[i].x * outer_ring[j].y);
+    }
+    a = std::abs(a) * 0.5;
+
+    for (const auto& hole : inner_rings) {
+        if (hole.size() < 3) continue;
+        double ha = 0.0;
+        std::size_t hn = hole.size();
+        for (std::size_t i = 0, j = hn - 1; i < hn; j = i++) {
+            ha += (hole[j].x * hole[i].y) - (hole[i].x * hole[j].y);
+        }
+        a -= std::abs(ha) * 0.5;
+    }
+    return std::max(0.0, a);
+}
+
+double Polygon2D::perimeter() const {
+    if (outer_ring.empty()) return 0.0;
+    double p = 0.0;
+    std::size_t n = outer_ring.size();
+    for (std::size_t i = 0, j = n - 1; i < n; j = i++) {
+        double dx = outer_ring[i].x - outer_ring[j].x;
+        double dy = outer_ring[i].y - outer_ring[j].y;
+        p += std::sqrt(dx * dx + dy * dy);
+    }
+    return p;
+}
+
 bool Polygon2D::contains(double x, double y) const {
     if (x < min_x || x > max_x || y < min_y || y > max_y) return false;
     bool inside = false;
@@ -133,6 +166,29 @@ nlohmann::json VectorShape::to_geojson() const {
         {"type", "FeatureCollection"},
         {"bbox", {min_x, min_y, max_x, max_y}},
         {"features", features}
+    };
+}
+
+nlohmann::json VectorShape::to_metrics_json() const {
+    std::size_t total_points = 0;
+    double total_area = 0.0;
+    double total_perimeter = 0.0;
+
+    for (const auto& poly : polygons) {
+        total_points += poly.outer_ring.size();
+        for (const auto& hole : poly.inner_rings) total_points += hole.size();
+        total_area += poly.area();
+        total_perimeter += poly.perimeter();
+    }
+
+    return {
+        {"name", name},
+        {"polygons_count", polygons.size()},
+        {"total_points", total_points},
+        {"bbox", {min_x, min_y, max_x, max_y}},
+        {"centroid", {(min_x + max_x) / 2.0, (min_y + max_y) / 2.0}},
+        {"approx_area", total_area},
+        {"approx_perimeter", total_perimeter}
     };
 }
 
@@ -292,7 +348,6 @@ VectorShape VectorShape::parse_kmz_or_zip(const std::filesystem::path& path) {
 
     std::size_t pos = content.find(tag_open);
     if (pos != std::string::npos) {
-        // Embedded KML XML string in zip stream
         VectorShape shape;
         shape.name = path.stem().string();
         while (pos != std::string::npos) {

@@ -5,6 +5,10 @@ import socket
 import subprocess
 import sys
 import tempfile
+import urllib.request
+
+urllib.request.install_opener(urllib.request.build_opener(urllib.request.ProxyHandler({})))
+
 project=Path(sys.argv[1]).resolve()
 with tempfile.TemporaryDirectory(prefix='sister-image-runtime-') as temp:
     root=Path(temp)
@@ -12,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix='sister-image-runtime-') as temp:
         s.bind(('127.0.0.1',0));port=s.getsockname()[1]
     binding=root/'binding.json'
     binding.write_text(json.dumps({'schema':'sister.infra.runtime.binding/1.0.0','components':[{'system_id':'sister_image','component_id':'image','runtime':{'transport':'tcp','listen':'127.0.0.1','port':port}}]}))
-    env=dict(os.environ,SISTER_RUNTIME_MODE='dev-preview',SISTER_RUNTIME_INSTANCE_ID='runtime-test-instance',SISTER_RUNTIME_STATE_DIR=str(root/'state'),SISTER_RUNTIME_RUN_DIR=str(root/'run'),SISTER_RUNTIME_DATA_DIR=str(root/'data'),SISTER_RUNTIME_CLEANUP_SCOPE='preview-only',SISTER_RESOLVED_DEPLOYMENT_FILE=str(binding))
+    env=dict(os.environ,SISTER_RUNTIME_MODE='dev-preview',SISTER_RUNTIME_INSTANCE_ID='runtime-test-instance',SISTER_RUNTIME_STATE_DIR=str(root/'state'),SISTER_RUNTIME_RUN_DIR=str(root/'run'),SISTER_RUNTIME_DATA_DIR=str(root/'data'),SISTER_RUNTIME_CLEANUP_SCOPE='preview-only',SISTER_RESOLVED_DEPLOYMENT_FILE=str(binding),http_proxy='',https_proxy='',HTTP_PROXY='',HTTPS_PROXY='',no_proxy='127.0.0.1,localhost',NO_PROXY='127.0.0.1,localhost')
     def run(action,code=0):
         r=subprocess.run([str(project/'scripts/runtime.sh'),action],env=env,text=True,capture_output=True,timeout=20)
         assert r.returncode==code,(action,r.returncode,r.stdout,r.stderr)

@@ -124,13 +124,13 @@ int main(int argc, char** argv) {
                 return httplib::Server::HandlerResponse::Handled;
             }
             if (req.method != "GET" && req.method != "HEAD") {
-                static const std::regex post_routes(R"(/api/(classify|demo|shapes/parse|clip|convert)|/echo)");
+                static const std::regex post_routes(R"(/api/(classify|demo|shapes/parse|shapes/analyze|raster/inspect|clip|convert)|/echo)");
                 static const std::regex clip_job_route(R"(/api/jobs/[0-9a-f]{32}/clip)");
                 if (!std::regex_match(req.path, post_routes) && !std::regex_match(req.path, clip_job_route) && req.method != "DELETE") {
                     error(res, 404, "Rota desconhecida");
                     return httplib::Server::HandlerResponse::Handled;
                 }
-                if (req.path != "/api/classify" && req.path != "/api/clip") {
+                if (req.path != "/api/classify" && req.path != "/api/clip" && req.path != "/api/raster/inspect") {
                     const auto size = req.get_header_value("Content-Length");
                     try {
                         if (req.has_header("Transfer-Encoding") || (!size.empty() && std::stoull(size) > 10 * 1024 * 1024)) {
@@ -213,7 +213,7 @@ int main(int argc, char** argv) {
             respond(r, {{"deleted", true}});
         });
 
-        // Endpoint para parsear vetores SHP/KML/KMZ/GeoJSON
+        // Endpoint autônomo para parsear vetores SHP/KML/KMZ/GeoJSON
         server.Post("/api/shapes/parse", [&](const httplib::Request& req, httplib::Response& res) {
             if (!authorized(req, res)) return;
             try {
@@ -232,6 +232,46 @@ int main(int argc, char** argv) {
                 respond(res, {{"schema", "sister.image.shape/1.0.0"}, {"geojson", shape.to_geojson()}});
             } catch (const std::exception& e) {
                 error(res, 400, std::string("Falha processando vetor: ") + e.what());
+            }
+        });
+
+        // Endpoint para análise geométrica independente de vetores
+        server.Post("/api/shapes/analyze", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!authorized(req, res)) return;
+            try {
+                VectorShape shape;
+                if (req.has_header("Content-Type") && req.get_header_value("Content-Type") == "application/json") {
+                    shape = VectorShape::parse_geojson(Json::parse(req.body));
+                } else {
+                    const auto temp_path = root / ("temp_vector_analyze_" + identifier() + ".tmp");
+                    std::ofstream temp(temp_path, std::ios::binary);
+                    temp.write(req.body.data(), req.body.size());
+                    temp.close();
+                    try { shape = VectorShape::parse_file(temp_path); }
+                    catch (...) { fs::remove(temp_path); throw; }
+                    fs::remove(temp_path);
+                }
+                respond(res, {{"schema", "sister.image.shape.analysis/1.0.0"}, {"geojson", shape.to_geojson()}, {"metrics", shape.to_metrics_json()}});
+            } catch (const std::exception& e) {
+                error(res, 400, std::string("Falha analisando vetor: ") + e.what());
+            }
+        });
+
+        // Endpoint autônomo para inspeção de imagens raster
+        server.Post("/api/raster/inspect", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!authorized(req, res)) return;
+            try {
+                const auto temp_path = root / ("temp_raster_inspect_" + identifier() + ".tif");
+                std::ofstream temp(temp_path, std::ios::binary);
+                temp.write(req.body.data(), req.body.size());
+                temp.close();
+                Json info;
+                try { info = inspect_raster(temp_path); }
+                catch (...) { fs::remove(temp_path); throw; }
+                fs::remove(temp_path);
+                respond(res, {{"schema", "sister.image.raster.inspection/1.0.0"}, {"info", info}});
+            } catch (const std::exception& e) {
+                error(res, 400, std::string("Falha inspecionando raster: ") + e.what());
             }
         });
 

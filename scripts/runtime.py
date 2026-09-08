@@ -10,8 +10,20 @@ import sys
 import time
 import urllib.request
 
+# Ensure local loopback requests bypass any environment HTTP proxy (e.g., Squid)
+urllib.request.install_opener(urllib.request.build_opener(urllib.request.ProxyHandler({})))
+
 project = Path(__file__).resolve().parents[1]
 env = os.environ.copy()
+env.update({
+    'http_proxy': '',
+    'https_proxy': '',
+    'HTTP_PROXY': '',
+    'HTTPS_PROXY': '',
+    'no_proxy': '127.0.0.1,localhost',
+    'NO_PROXY': '127.0.0.1,localhost'
+})
+
 mode = env.get('SISTER_RUNTIME_MODE', '')
 instance = env.get('SISTER_RUNTIME_INSTANCE_ID', '')
 if mode == 'dev-preview':

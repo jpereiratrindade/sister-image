@@ -15,4 +15,5 @@ Json classify(const std::filesystem::path& directory, const Json& config);
 void make_demo(const std::filesystem::path& path);
 void original_preview(const std::filesystem::path& source, const std::filesystem::path& dest);
 ClipResult clip_job(const std::filesystem::path& directory, const VectorShape& shape);
+Json inspect_raster(const std::filesystem::path& path);
 }

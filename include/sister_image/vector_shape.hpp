@@ -23,6 +23,8 @@ struct Polygon2D {
 
     void compute_bounds();
     [[nodiscard]] bool contains(double x, double y) const;
+    [[nodiscard]] double area() const;
+    [[nodiscard]] double perimeter() const;
 };
 
 class VectorShape {
@@ -34,6 +36,7 @@ public:
     void compute_bounds();
     [[nodiscard]] bool contains(double x, double y) const;
     [[nodiscard]] nlohmann::json to_geojson() const;
+    [[nodiscard]] nlohmann::json to_metrics_json() const;
 
     static VectorShape parse_file(const std::filesystem::path& path);
     static VectorShape parse_shp(const std::filesystem::path& path);

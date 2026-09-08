@@ -3,64 +3,143 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SisTer Image · Processamento e Classificação de Imagens</title>
+  <title>SisTer Image · Workstation de Sensoriamento Remoto & Geoprocessamento</title>
   <link rel="stylesheet" href="style.css">
   <script src="app.js" defer></script>
 </head>
-<body>
+<body class="widescreen-app">
   <header>
-    <a class="brand" href="./">
-      <span class="mark">▦</span>
-      <span>SisTer <strong>Image</strong></span>
-    </a>
+    <div class="brand-group">
+      <a class="brand" href="./">
+        <span class="mark">▦</span>
+        <span>SisTer <strong>Image</strong></span>
+      </a>
+      <span class="subsystem-tag">Workstation de Geoprocessamento</span>
+    </div>
     <div class="header-status">
       <span class="badge status-pill"><span class="dot"></span> sister.subsystem/1.0.0</span>
-      <span class="badge">Laboratório de Sensoriamento Remoto</span>
+      <button id="toggle-sidebar-btn" class="icon-button" title="Alternar Painel de Controle">☰ Painel</button>
     </div>
   </header>
 
-  <main>
-    <section class="intro">
-      <p class="eyebrow">DA IMAGEM ÀS REGIÕES & RECOVERY VETORIAL</p>
-      <h1>Análise Espacial.<br><span>Explore e Recorte a Paisagem.</span></h1>
-      <p>Classificação não supervisionada de imagens GeoTIFF, sobreposição vetorial SHP/KML e ferramentas de recorte O(scanline) com preservação de georreferenciamento.</p>
-    </section>
+  <nav class="tool-bar" role="tablist">
+    <button class="tool-btn active" data-tab="tab-vectors" role="tab">
+      <span class="tool-icon">⬡</span>
+      <span class="tool-label">Vetores & Shapes</span>
+    </button>
+    <button class="tool-btn" data-tab="tab-raster" role="tab">
+      <span class="tool-icon">🖼</span>
+      <span class="tool-label">Imagens Raster</span>
+    </button>
+    <button class="tool-btn" data-tab="tab-classify" role="tab">
+      <span class="tool-icon">▦</span>
+      <span class="tool-label">Classificação de Regiões</span>
+    </button>
+    <button class="tool-btn" data-tab="tab-clip" role="tab">
+      <span class="tool-icon">✂</span>
+      <span class="tool-label">Geoprocessamento & Recorte</span>
+    </button>
+    <button class="tool-btn" data-tab="tab-history" role="tab">
+      <span class="tool-icon">⏱</span>
+      <span class="tool-label">Execuções Recentes</span>
+    </button>
+  </nav>
 
-    <div class="nav-tabs" role="tablist">
-      <button class="tab-btn active" data-tab="tab-classify" role="tab" aria-selected="true">▦ Classificação Raster</button>
-      <button class="tab-btn" data-tab="tab-shape" role="tab" aria-selected="false">⬡ Shapes SHP & KML/KMZ</button>
-      <button class="tab-btn" data-tab="tab-history" role="tab" aria-selected="false">⏱ Execuções Recentes</button>
-    </div>
+  <main class="widescreen-workspace">
+    <!-- DOCKABLE CONTROL PANEL -->
+    <aside id="control-dock" class="dock-panel">
 
-    <div class="workspace">
-      <!-- SIDEBAR CONTROLS -->
-      <aside>
-        <!-- TAB 1: CLASSIFICAÇÃO -->
-        <div id="tab-classify" class="tab-content active">
-          <form id="form">
-            <section class="panel">
-              <div class="section-title"><span>01</span><h2>Imagem TIFF de entrada</h2></div>
-              <label class="drop" id="drop" for="file">
-                <span class="upload-icon">↥</span>
-                <strong id="filename">Escolha ou arraste um TIFF</strong>
-                <small>TIFF / BigTIFF / GeoTIFF · até 1 GiB<br>8 bits · RGB, RGBA ou Cinza</small>
-                <input id="file" type="file" accept=".tif,.tiff,image/tiff">
-              </label>
-              <button type="button" class="text-button" id="demo">Experimentar com imagem de exemplo ↗</button>
-            </section>
+      <!-- TOOL 1: VETORES E SHAPES AUTÔNOMO -->
+      <div id="tab-vectors" class="tool-panel active">
+        <section class="card">
+          <div class="card-header">
+            <span class="card-num">01</span>
+            <h3>Estúdio de Vetores & Polígonos</h3>
+          </div>
+          <p class="card-desc">Carregue e analise arquivos de forma independente sem necessidade de raster.</p>
+          
+          <label class="drop-zone" id="vector-drop" for="vector-file">
+            <span class="drop-icon">⬡</span>
+            <strong id="vector-filename">Escolha ou arraste um vetor</strong>
+            <small>Shapefile (.shp / .zip), Google Earth (.kml / .kmz) ou GeoJSON</small>
+            <input id="vector-file" type="file" accept=".shp,.kml,.kmz,.zip,.geojson,.json">
+          </label>
 
-            <section class="panel">
-              <div class="section-title"><span>02</span><h2>Parâmetros de Análise</h2></div>
-              <label>Método
+          <div id="vector-metrics-card" class="metrics-card" hidden>
+            <h4>Atributos & Geometria</h4>
+            <div class="metrics-grid">
+              <div class="metric-item"><span class="m-val" id="v-count-poly">0</span><span class="m-lbl">Polígonos</span></div>
+              <div class="metric-item"><span class="m-val" id="v-count-pts">0</span><span class="m-lbl">Vértices Totais</span></div>
+              <div class="metric-item"><span class="m-val" id="v-area">0.0</span><span class="m-lbl">Área Estimada</span></div>
+              <div class="metric-item"><span class="m-val" id="v-perim">0.0</span><span class="m-lbl">Perímetro Total</span></div>
+            </div>
+            <div class="bbox-info">
+              <small><strong>BBox (Envelope):</strong> <span id="v-bbox">-</span></small>
+            </div>
+            <button class="secondary action-btn" id="download-geojson-btn">Baixar GeoJSON Parsado ↓</button>
+          </div>
+        </section>
+      </div>
+
+      <!-- TOOL 2: IMAGENS RASTER AUTÔNOMO -->
+      <div id="tab-raster" class="tool-panel">
+        <section class="card">
+          <div class="card-header">
+            <span class="card-num">02</span>
+            <h3>Inspeção de Imagem Raster</h3>
+          </div>
+          <p class="card-desc">Examine metadados de georreferenciamento GeoTIFF, dimensões e resoluções.</p>
+
+          <label class="drop-zone" id="raster-drop" for="raster-file">
+            <span class="drop-icon">🖼</span>
+            <strong id="raster-filename">Escolha ou arraste um GeoTIFF</strong>
+            <small>TIFF / BigTIFF / GeoTIFF · até 1 GiB</small>
+            <input id="raster-file" type="file" accept=".tif,.tiff,image/tiff">
+          </label>
+
+          <div id="raster-info-card" class="metrics-card" hidden>
+            <h4>Metadados Geográficos</h4>
+            <div class="metrics-grid">
+              <div class="metric-item"><span class="m-val" id="r-dim">0 × 0</span><span class="m-lbl">Dimensões (px)</span></div>
+              <div class="metric-item"><span class="m-val" id="r-spp">0</span><span class="m-lbl">Canais/Bandas</span></div>
+              <div class="metric-item"><span class="m-val" id="r-bps">0 bit</span><span class="m-lbl">Profundidade</span></div>
+              <div class="metric-item"><span class="m-val" id="r-geotiff">Não</span><span class="m-lbl">Tags GeoTIFF</span></div>
+            </div>
+            <div class="bbox-info">
+              <small><strong>Pixel Scale (X, Y):</strong> <span id="r-scale">-</span></small><br>
+              <small><strong>Tiepoint Origin:</strong> <span id="r-tie">-</span></small>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- TOOL 3: CLASSIFICAÇÃO -->
+      <div id="tab-classify" class="tool-panel">
+        <form id="classify-form">
+          <section class="card">
+            <div class="card-header">
+              <span class="card-num">03</span>
+              <h3>Classificação de Regiões</h3>
+            </div>
+
+            <label class="drop-zone" id="classify-drop" for="classify-file">
+              <span class="drop-icon">↥</span>
+              <strong id="classify-filename">Escolha a Imagem TIFF</strong>
+              <small>TIFF / GeoTIFF para classificação</small>
+              <input id="classify-file" type="file" accept=".tif,.tiff,image/tiff">
+            </label>
+            <button type="button" class="text-button" id="demo-btn">Usar imagem sintética de demonstração ↗</button>
+
+            <div class="form-group">
+              <label>Método de Classificação
                 <select id="mode">
                   <option value="classes">Classes de intensidade e textura</option>
                   <option value="patches">Manchas homogêneas</option>
                 </select>
               </label>
-              <p class="help" id="method-help">Agrupa janelas com características semelhantes. Os tons representam classes visuais.</p>
-              
-              <div class="fields">
-                <label>Janela (pixels)
+
+              <div class="fields-row">
+                <label>Janela (px)
                   <input id="window" type="number" min="8" max="8192" value="128" required>
                 </label>
                 <label id="classes-field">Classes
@@ -71,108 +150,104 @@
                 </label>
               </div>
 
-              <details>
-                <summary>Pixels e áreas sem dados</summary>
-                <label class="check">
-                  <input id="ignore_zero" type="checkbox" checked> Ignorar pixels pretos (zero)
+              <details class="advanced-opts">
+                <summary>Ajustes de Nodata e Máscaras</summary>
+                <label class="check-label">
+                  <input id="ignore_zero" type="checkbox" checked> Ignorar pixels zeros (preto)
                 </label>
-                <label>Fração mínima de pixels válidos
+                <label>Fração Mínima Válida
                   <input id="min_valid" type="number" min="0" max="1" step="0.05" value="0.25">
                 </label>
-                <label>Valor adicional sem dados (opcional)
+                <label>Valor Nodata Adicional
                   <input id="nodata" type="number" min="0" max="255" placeholder="Ex.: 255">
                 </label>
-                <p class="help">Pixels transparentes são ignorados. O valor adicional é comparado à intensidade em cinza.</p>
               </details>
 
-              <button class="primary" id="submit" type="submit">Classificar Imagem <span>→</span></button>
-            </section>
-          </form>
-        </div>
-
-        <!-- TAB 2: SHAPES & RECORTE -->
-        <div id="tab-shape" class="tab-content">
-          <section class="panel">
-            <div class="section-title"><span>03</span><h2>Polígonos & Vetores</h2></div>
-            <label class="drop" id="shape-drop" for="shape-file">
-              <span class="upload-icon">⬡</span>
-              <strong id="shape-filename">Escolha SHP, KML, KMZ ou ZIP</strong>
-              <small>Shapefile (.shp), Google Earth (.kml/.kmz) ou GeoJSON</small>
-              <input id="shape-file" type="file" accept=".shp,.kml,.kmz,.zip,.geojson,.json">
-            </label>
-
-            <div id="shape-info" class="shape-info-card" hidden>
-              <p><strong>Vetor Carregado:</strong> <span id="shape-name">Nenhum</span></p>
-              <p><strong>Polígonos:</strong> <span id="shape-poly-count">0</span></p>
-            </div>
-
-            <button class="primary" id="clip-btn" type="button" disabled>Recortar GeoTIFF por Shape <span>✂</span></button>
-            <p class="help">O recorte gera um novo GeoTIFF preservando a matriz de transformação espacial e aplicando a máscara de polígono em streaming O(scanline).</p>
-          </section>
-        </div>
-
-        <!-- TAB 3: HISTÓRICO -->
-        <div id="tab-history" class="tab-content">
-          <section class="panel history">
-            <div class="section-title"><span>04</span><h2>Execuções Recentes</h2></div>
-            <div id="jobs">
-              <p class="help">Nenhuma execução ainda.</p>
+              <button class="primary action-btn" id="submit-classify" type="submit">Executar Classificação <span>→</span></button>
             </div>
           </section>
+        </form>
+      </div>
+
+      <!-- TOOL 4: GEOPROCESSAMENTO E RECORTE -->
+      <div id="tab-clip" class="tool-panel">
+        <section class="card">
+          <div class="card-header">
+            <span class="card-num">04</span>
+            <h3>Máscara Espacial & Recorte</h3>
+          </div>
+          <p class="card-desc">Operação cruzada: Recorte e mascara pixels de GeoTIFF delimitados por vetor polígono.</p>
+
+          <div class="clip-status-card">
+            <p><strong>Vetor Carregado:</strong> <span id="clip-vector-name">Nenhum</span></p>
+            <p><strong>Raster Carregado:</strong> <span id="clip-raster-name">Nenhum</span></p>
+          </div>
+
+          <label class="check-label">
+            <input id="mask-outside-check" type="checkbox" checked> Mascarar pixels fora do polígono (Nodata=0)
+          </label>
+
+          <button class="primary action-btn" id="exec-clip-btn" type="button" disabled>Recortar GeoTIFF por Polígono <span>✂</span></button>
+        </section>
+      </div>
+
+      <!-- TOOL 5: HISTÓRICO -->
+      <div id="tab-history" class="tool-panel">
+        <section class="card">
+          <div class="card-header">
+            <span class="card-num">05</span>
+            <h3>Histórico de Tarefas</h3>
+          </div>
+          <div id="jobs-list" class="jobs-history-list">
+            <p class="help">Nenhuma execução registrada.</p>
+          </div>
+        </section>
+      </div>
+    </aside>
+
+    <!-- MAXIMIZED VIEWPORT & CANVAS CONTAINER -->
+    <section class="viewport-section">
+      <div class="viewport-card">
+        <div class="viewport-header">
+          <div class="title-group">
+            <span id="state-badge" class="badge">Aguardando operação</span>
+            <h2 id="viewport-title">Visualizador de Sensoriamento Remoto</h2>
+          </div>
+
+          <!-- VIEW SWITCHER BUTTONS -->
+          <div class="view-switcher" id="view-switcher">
+            <button class="v-btn active" id="v-map">Mapa Classificado</button>
+            <button class="v-btn" id="v-original">Imagem Original</button>
+            <button class="v-btn" id="v-vector">Polígonos Vetoriais</button>
+            <button class="v-btn" id="v-clipped" hidden>GeoTIFF Recortado</button>
+          </div>
         </div>
-      </aside>
 
-      <!-- MAIN RESULTS & VIEWER -->
-      <section class="results">
-        <div class="panel viewer">
-          <div class="viewer-heading">
-            <div>
-              <p class="eyebrow">VISUALIZADOR SISTER</p>
-              <h2 id="result-title">Sua imagem e mapa de regiões</h2>
-            </div>
-            <span id="state" class="badge">Aguardando imagem</span>
-          </div>
+        <div id="status-bar" class="status-bar" role="status" aria-live="polite">Selecione uma ferramenta na barra superior para começar.</div>
+        <progress id="task-progress" hidden></progress>
 
-          <!-- VIEWER MODE TOGGLE BUTTONS -->
-          <div class="viewer-controls" id="viewer-controls" hidden>
-            <button class="view-btn active" id="view-map">Mapa Classificado</button>
-            <button class="view-btn" id="view-original">Imagem Original</button>
-            <button class="view-btn" id="view-overlay">Sobreposição Vetor</button>
-            <button class="view-btn" id="view-clipped" hidden>Resultado Recortado</button>
-          </div>
+        <div id="viewport-empty" class="viewport-empty">
+          <div class="grid-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <p>Workstation SisTer Pronta</p>
+          <small>As prévias da imagem, geometrias vetoriais e mapas serão renderizados aqui em alta resolução.</small>
+        </div>
 
-          <div id="message" role="status" aria-live="polite">Envie uma imagem ou experimente o exemplo para começar.</div>
-          <progress id="progress" hidden></progress>
+        <div class="canvas-wrapper">
+          <canvas id="viewport-canvas" hidden aria-label="Visualizador gráfico SisTer"></canvas>
+        </div>
 
-          <div id="empty">
-            <div class="grid-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-            <p>Uma nova leitura da sua imagem</p>
-            <small>O mapa e as opções de prévia aparecerão aqui após o processamento.</small>
-          </div>
+        <div id="result-bar" class="result-bar" hidden>
+          <div class="result-metrics" id="result-metrics"></div>
 
-          <div class="canvas-container">
-            <canvas id="canvas" hidden aria-label="Prévia do mapa de regiões"></canvas>
-          </div>
-
-          <div id="result" hidden>
-            <div class="metrics" id="metrics"></div>
-            <p class="help">Prévia reduzida. O GeoTIFF mantém as dimensões originais. Preto indica janelas sem classificação; tons não são categorias semânticas nem probabilidades.</p>
-            
-            <div class="downloads">
-              <a class="primary" id="map" download>Baixar GeoTIFF Classificado ↓</a>
-              <a class="secondary" id="download-original" download>Prévia Original PGM ↓</a>
-              <a class="secondary" id="download-clipped" download hidden>GeoTIFF Recortado ↓</a>
-              <a class="secondary" id="report" download>Relatório JSON ↓</a>
-            </div>
+          <div class="download-group">
+            <a class="primary dl-btn" id="dl-map" download>GeoTIFF Classificado ↓</a>
+            <a class="secondary dl-btn" id="dl-original" download>Prévia Original PGM ↓</a>
+            <a class="secondary dl-btn" id="dl-clipped" download hidden>GeoTIFF Recortado ↓</a>
+            <a class="secondary dl-btn" id="dl-report" download>Relatório JSON ↓</a>
           </div>
         </div>
-      </section>
-    </div>
-
-    <footer>
-      <span>SisTer Image · Processamento e Classificação Espacial</span>
-      <span>Contrato <code>sister.subsystem/1.0.0</code> · Arquitetura O(scanline)</span>
-    </footer>
+      </div>
+    </section>
   </main>
 </body>
 </html>

@@ -1,12 +1,20 @@
 'use strict';
+
 const $ = id => document.getElementById(id);
-let currentJob = null, currentGeoJSON = null, currentViewMode = 'map', polling = false;
+let currentJob = null;
+let currentGeoJSON = null;
+let currentRasterInfo = null;
+let currentViewMode = 'map';
+let polling = false;
 
 const states = { uploading: 'Enviando', running: 'Processando', completed: 'Concluída', failed: 'Falhou' };
 
-function message(text, failure = false) {
-  $('message').textContent = text;
-  $('message').className = failure ? 'error' : '';
+function statusMessage(text, failure = false) {
+  const bar = $('status-bar');
+  if (bar) {
+    bar.textContent = text;
+    bar.className = 'status-bar' + (failure ? ' error' : '');
+  }
 }
 
 async function api(path, options = {}) {
@@ -19,57 +27,25 @@ async function api(path, options = {}) {
   return response;
 }
 
-function params() {
+function getClassifyParams() {
   const p = new URLSearchParams();
   for (const id of ['mode', 'window', 'classes', 'homogeneity', 'min_valid', 'nodata']) {
-    p.set(id, $(id).value);
+    if ($(id)) p.set(id, $(id).value);
   }
-  p.set('ignore_zero', $('ignore_zero').checked);
+  if ($('ignore_zero')) p.set('ignore_zero', $('ignore_zero').checked);
   return p;
 }
 
-function working(value) {
-  $('submit').disabled = value;
-  $('demo').disabled = value;
-  $('progress').hidden = !value;
+function setWorking(value) {
+  if ($('submit-classify')) $('submit-classify').disabled = value;
+  if ($('demo-btn')) $('demo-btn').disabled = value;
+  if ($('task-progress')) $('task-progress').hidden = !value;
 }
 
-// Render PGM raw binary scanline data into HTML5 Canvas
-async function renderPGM(path) {
-  const response = await api(path);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  let end = 0, lines = 0;
-  while (end < bytes.length && lines < 3) {
-    if (bytes[end++] === 10) lines++;
-  }
-  const header = new TextDecoder().decode(bytes.slice(0, end)).trim().split(/\s+/);
-  const width = Number(header[1]), height = Number(header[2]);
-  if (header[0] !== 'P5' || width > 2048 || height > 2048 || bytes.length - end !== width * height) {
-    throw Error('Prévia de imagem inválida.');
-  }
-
-  const canvas = $('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  const image = ctx.createImageData(width, height);
-  for (let i = 0; i < width * height; i++) {
-    const c = bytes[end + i];
-    image.data.set([c, c, c, 255], i * 4);
-  }
-  ctx.putImageData(image, 0, 0);
-  canvas.hidden = false;
-  $('empty').hidden = true;
-
-  // If overlay mode and vector shape exists, draw vector paths
-  if (currentViewMode === 'overlay' && currentGeoJSON) {
-    drawVectorOverlay(ctx, width, height, currentGeoJSON);
-  }
-}
-
-function drawVectorOverlay(ctx, canvasWidth, canvasHeight, geojson) {
-  if (!geojson || !geojson.features) return;
-  const bbox = geojson.bbox || [0, 0, canvasWidth, canvasHeight];
+// Draw vector polygon outlines on canvas
+function drawVectorOverlay(ctx, width, height, geojson) {
+  if (!geojson || !geojson.features || !geojson.features.length) return;
+  const bbox = geojson.bbox || [0, 0, width, height];
   const minX = bbox[0], minY = bbox[1], maxX = bbox[2], maxY = bbox[3];
   const rangeX = maxX - minX || 1, rangeY = maxY - minY || 1;
 
@@ -83,8 +59,8 @@ function drawVectorOverlay(ctx, canvasWidth, canvasHeight, geojson) {
         ctx.beginPath();
         for (let i = 0; i < ring.length; i++) {
           const pt = ring[i];
-          const px = (pt[0] - minX) / rangeX * canvasWidth;
-          const py = (maxY - pt[1]) / rangeY * canvasHeight;
+          const px = (pt[0] - minX) / rangeX * width;
+          const py = (maxY - pt[1]) / rangeY * height;
           if (i === 0) ctx.moveTo(px, py);
           else ctx.lineTo(px, py);
         }
@@ -96,194 +72,161 @@ function drawVectorOverlay(ctx, canvasWidth, canvasHeight, geojson) {
   }
 }
 
+// Render raw PGM image preview to canvas
+async function renderPGM(path) {
+  const response = await api(path);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  let end = 0, lines = 0;
+  while (end < bytes.length && lines < 3) {
+    if (bytes[end++] === 10) lines++;
+  }
+  const header = new TextDecoder().decode(bytes.slice(0, end)).trim().split(/\s+/);
+  const width = Number(header[1]), height = Number(header[2]);
+  if (header[0] !== 'P5' || width > 2048 || height > 2048 || bytes.length - end !== width * height) {
+    throw Error('Prévia PGM inválida.');
+  }
+
+  const canvas = $('viewport-canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  const image = ctx.createImageData(width, height);
+  for (let i = 0; i < width * height; i++) {
+    const c = bytes[end + i];
+    image.data.set([c, c, c, 255], i * 4);
+  }
+  ctx.putImageData(image, 0, 0);
+  canvas.hidden = false;
+  if ($('viewport-empty')) $('viewport-empty').hidden = true;
+
+  if (currentViewMode === 'vector' && currentGeoJSON) {
+    drawVectorOverlay(ctx, width, height, currentGeoJSON);
+  }
+}
+
+// Render vector shape independently on blank canvas when no image is loaded
+function renderStandaloneVector(geojson) {
+  const width = 800, height = 600;
+  const canvas = $('viewport-canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#0b1329';
+  ctx.fillRect(0, 0, width, height);
+
+  drawVectorOverlay(ctx, width, height, geojson);
+  canvas.hidden = false;
+  if ($('viewport-empty')) $('viewport-empty').hidden = true;
+}
+
 async function updateView(mode) {
   currentViewMode = mode;
-  document.querySelectorAll('.view-btn').forEach(btn => btn.classList.remove('active'));
-  if (mode === 'map') $('view-map').classList.add('active');
-  if (mode === 'original') $('view-original').classList.add('active');
-  if (mode === 'overlay') $('view-overlay').classList.add('active');
-  if (mode === 'clipped') $('view-clipped').classList.add('active');
+  document.querySelectorAll('.v-btn').forEach(b => b.classList.remove('active'));
+  if ($('v-' + mode)) $('v-' + mode).classList.add('active');
+
+  if (mode === 'vector' && currentGeoJSON && !currentJob) {
+    renderStandaloneVector(currentGeoJSON);
+    statusMessage('Exibindo geometria do vetor carregado.');
+    return;
+  }
 
   if (!currentJob) return;
+
   try {
     if (mode === 'original') {
       await renderPGM(`api/jobs/${currentJob}/original_preview.pgm`);
-      message('Exibindo prévia da imagem original.');
+      statusMessage('Exibindo prévia da imagem original.');
     } else if (mode === 'clipped') {
       await renderPGM(`api/jobs/${currentJob}/clipped_preview.pgm`);
-      message('Exibindo prévia do GeoTIFF recortado.');
+      statusMessage('Exibindo prévia do GeoTIFF recortado.');
     } else {
       await renderPGM(`api/jobs/${currentJob}/preview.pgm`);
-      message(mode === 'overlay' ? 'Exibindo sobreposição do vetor sobre o mapa.' : 'Exibindo mapa de regiões classificado.');
+      statusMessage(mode === 'vector' ? 'Exibindo sobreposição de polígonos vetoriais.' : 'Exibindo mapa de regiões classificado.');
     }
   } catch (e) {
-    message(e.message, true);
+    statusMessage(e.message, true);
   }
 }
 
-async function show(job) {
-  currentJob = job.id;
-  $('state').textContent = states[job.status] || job.status;
-
-  if (job.status === 'failed') {
-    working(false);
-    message(job.message || 'Não foi possível classificar esta imagem.', true);
-    return;
-  }
-  if (job.status !== 'completed') {
-    working(true);
-    message('Classificação em andamento. Acompanhe nesta página.');
-    return;
-  }
-
-  working(false);
-  message('Processamento concluído. Visualize e baixe os resultados.');
-  $('viewer-controls').hidden = false;
-  await updateView('map');
-  $('result').hidden = false;
-
-  const result = job.result;
-  $('metrics').replaceChildren();
-  for (const [value, label] of [
-    [`${result.width.toLocaleString()} × ${result.height.toLocaleString()}`, 'Dimensões Originais'],
-    [result.windows.toLocaleString(), 'Janelas Classificadas'],
-    [`${result.elapsed_seconds.toFixed(2)} s`, 'Tempo de Processamento']
-  ]) {
-    const box = document.createElement('div');
-    box.className = 'metric';
-    const strong = document.createElement('strong'), small = document.createElement('small');
-    strong.textContent = value;
-    small.textContent = label;
-    box.append(strong, small);
-    $('metrics').append(box);
-  }
-
-  $('map').href = `api/jobs/${job.id}/map.tif`;
-  $('download-original').href = `api/jobs/${job.id}/original_preview.pgm`;
-  $('report').href = `api/jobs/${job.id}/report.json`;
-  if ($('clip-btn')) $('clip-btn').disabled = !currentGeoJSON;
-}
-
-async function refresh() {
-  const data = await (await api('api/jobs')).json();
-  const jobs = data.jobs.sort((a, b) => b.created_at.localeCompare(a.created_at));
-  $('jobs').replaceChildren();
-
-  if (!jobs.length) {
-    const p = document.createElement('p');
-    p.className = 'help';
-    p.textContent = 'Nenhuma execução ainda.';
-    $('jobs').append(p);
-  }
-
-  for (const job of jobs) {
-    const row = document.createElement('div');
-    row.className = 'job';
-    const open = document.createElement('button');
-    open.textContent = `${new Date(job.created_at).toLocaleString('pt-BR')} · ${states[job.status] || job.status}`;
-    open.onclick = () => {
-      $('result').hidden = true;
-      $('canvas').hidden = true;
-      $('empty').hidden = false;
-      show(job).catch(e => message(e.message, true));
-    };
-    row.append(open);
-
-    if (['completed', 'failed'].includes(job.status)) {
-      const del = document.createElement('button');
-      del.textContent = 'Excluir';
-      del.setAttribute('aria-label', `Excluir execução ${job.id}`);
-      del.onclick = async () => {
-        if (!confirm('Excluir esta execução, sua imagem e os resultados?')) return;
-        try {
-          await api(`api/jobs/${job.id}`, { method: 'DELETE' });
-          if (currentJob === job.id) {
-            currentJob = null;
-            $('result').hidden = true;
-            $('canvas').hidden = true;
-            $('empty').hidden = false;
-            $('viewer-controls').hidden = true;
-            $('state').textContent = 'Aguardando imagem';
-            message('Execução excluída.');
-          }
-          await refresh();
-        } catch (e) { message(e.message, true); }
-      };
-      row.append(del);
-    }
-    $('jobs').append(row);
-  }
-
-  working(data.busy);
-  const selected = jobs.find(j => j.id === currentJob) || (!currentJob && jobs.find(j => ['running', 'uploading'].includes(j.status)));
-  if (selected && (selected.status !== 'completed' || $('result').hidden)) await show(selected);
-
-  if (data.busy && !polling) {
-    polling = true;
-    setTimeout(async () => {
-      polling = false;
-      try { await refresh(); } catch (e) { working(false); message(e.message, true); }
-    }, 1000);
-  }
-}
-
-async function submit(demo = false) {
-  if (!$('form').reportValidity()) return;
-  const file = $('file').files[0];
-  if (!demo && !file) { message('Escolha uma imagem TIFF para continuar.', true); return; }
-  if (file && !demo && file.size > 1024 ** 3) { message('O limite por imagem é 1 GiB.', true); return; }
-
-  working(true);
-  $('result').hidden = true;
-  $('canvas').hidden = true;
-  $('empty').hidden = false;
-  message(demo ? 'Preparando exemplo…' : 'Enviando imagem…');
-  $('state').textContent = 'Enviando';
-
-  try {
-    const response = await api(`${demo ? 'api/demo' : 'api/classify'}?${params()}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'image/tiff' },
-      body: demo ? null : file
-    });
-    await show(await response.json());
-    await refresh();
-  } catch (e) { working(false); message(e.message, true); }
-}
-
-async function handleShapeUpload(file) {
+// INHERENT VECTOR TOOL: Analyze SHP/KML/KMZ/GeoJSON
+async function handleVectorUpload(file) {
   if (!file) return;
-  $('shape-filename').textContent = file.name;
-  message('Processando arquivo vetorial…');
+  if ($('vector-filename')) $('vector-filename').textContent = file.name;
+  statusMessage('Analisando geometria vetorial…');
 
   try {
     const isJson = file.name.endsWith('.json') || file.name.endsWith('.geojson');
     const headers = isJson ? { 'Content-Type': 'application/json' } : {};
-    const body = file;
-
-    const response = await api('api/shapes/parse', { method: 'POST', headers, body });
+    const response = await api('api/shapes/analyze', { method: 'POST', headers, body: file });
     const data = await response.json();
+
     currentGeoJSON = data.geojson;
+    const metrics = data.metrics;
 
-    $('shape-name').textContent = file.name;
-    $('shape-poly-count').textContent = currentGeoJSON.features.length;
-    $('shape-info').hidden = false;
-    if ($('clip-btn')) $('clip-btn').disabled = !currentJob;
+    if ($('v-count-poly')) $('v-count-poly').textContent = metrics.polygons_count;
+    if ($('v-count-pts')) $('v-count-pts').textContent = metrics.total_points;
+    if ($('v-area')) $('v-area').textContent = metrics.approx_area.toFixed(4);
+    if ($('v-perim')) $('v-perim').textContent = metrics.approx_perimeter.toFixed(4);
+    if ($('v-bbox')) $('v-bbox').textContent = metrics.bbox.map(n => n.toFixed(3)).join(', ');
 
-    message('Vetor carregado com sucesso. Selecione a aba "Sobreposição Vetor" para visualizar.');
-    if (currentJob) await updateView('overlay');
+    if ($('vector-metrics-card')) $('vector-metrics-card').hidden = false;
+    if ($('clip-vector-name')) $('clip-vector-name').textContent = file.name;
+    if ($('exec-clip-btn')) $('exec-clip-btn').disabled = !(currentJob && currentGeoJSON);
+
+    // Download GeoJSON button
+    if ($('download-geojson-btn')) {
+      $('download-geojson-btn').onclick = () => {
+        const blob = new Blob([JSON.stringify(currentGeoJSON, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = (file.name.split('.')[0] || 'vector') + '.geojson';
+        a.click();
+      };
+    }
+
+    statusMessage(`Vetor "${file.name}" analisado. ${metrics.polygons_count} polígono(s), ${metrics.total_points} vértices.`);
+    await updateView('vector');
   } catch (e) {
-    message('Falha ao processar arquivo vetorial: ' + e.message, true);
+    statusMessage('Falha ao analisar arquivo vetorial: ' + e.message, true);
   }
 }
 
-async function performClip() {
+// INHERENT RASTER TOOL: Inspect GeoTIFF Metadata
+async function handleRasterInspect(file) {
+  if (!file) return;
+  if ($('raster-filename')) $('raster-filename').textContent = file.name;
+  statusMessage('Inspecionando metadados do GeoTIFF…');
+
+  try {
+    const response = await api('api/raster/inspect', { method: 'POST', body: file });
+    const data = await response.json();
+    currentRasterInfo = data.info;
+
+    if ($('r-dim')) $('r-dim').textContent = `${currentRasterInfo.width} × ${currentRasterInfo.height}`;
+    if ($('r-spp')) $('r-spp').textContent = currentRasterInfo.channels;
+    if ($('r-bps')) $('r-bps').textContent = `${currentRasterInfo.bits_per_sample} bit`;
+    if ($('r-geotiff')) $('r-geotiff').textContent = currentRasterInfo.has_geotiff_tags ? 'Sim (Georreferenciada)' : 'Não';
+    if ($('r-scale')) $('r-scale').textContent = `${currentRasterInfo.scale_x}, ${currentRasterInfo.scale_y}`;
+    if ($('r-tie')) $('r-tie').textContent = `${currentRasterInfo.tie_x}, ${currentRasterInfo.tie_y}`;
+
+    if ($('raster-info-card')) $('raster-info-card').hidden = false;
+    if ($('clip-raster-name')) $('clip-raster-name').textContent = file.name;
+
+    statusMessage(`GeoTIFF "${file.name}" inspecionado. ${currentRasterInfo.width} × ${currentRasterInfo.height} px, ${currentRasterInfo.channels} canais.`);
+  } catch (e) {
+    statusMessage('Falha ao inspecionar GeoTIFF: ' + e.message, true);
+  }
+}
+
+// SPATIAL CLIP TOOL: Crop GeoTIFF by Vector Mask
+async function executeSpatialClip() {
   if (!currentJob || !currentGeoJSON) {
-    message('Carregue uma imagem e um vetor para recortar.', true);
+    statusMessage('Carregue uma imagem e um vetor para executar o recorte.', true);
     return;
   }
 
-  message('Executando recorte do GeoTIFF por polígono…');
+  statusMessage('Executando recorte espacial do GeoTIFF por máscara de polígono…');
   try {
     const response = await api(`api/jobs/${currentJob}/clip`, {
       method: 'POST',
@@ -291,69 +234,183 @@ async function performClip() {
       body: JSON.stringify(currentGeoJSON)
     });
     const data = await response.json();
-    $('download-clipped').href = `api/jobs/${currentJob}/clipped.tif`;
-    $('download-clipped').hidden = false;
-    $('view-clipped').hidden = false;
+
+    if ($('dl-clipped')) {
+      $('dl-clipped').href = `api/jobs/${currentJob}/clipped.tif`;
+      $('dl-clipped').hidden = false;
+    }
+    if ($('v-clipped')) $('v-clipped').hidden = false;
+
     await updateView('clipped');
-    message(`GeoTIFF recortado com sucesso! Dimensões: ${data.result.output_width} × ${data.result.output_height}`);
+    statusMessage(`Recorte concluído! Novo GeoTIFF: ${data.result.output_width} × ${data.result.output_height} px em ${data.result.elapsed_seconds.toFixed(2)}s`);
   } catch (e) {
-    message('Falha ao recortar GeoTIFF: ' + e.message, true);
+    statusMessage('Falha no recorte espacial: ' + e.message, true);
   }
 }
 
-// TAB NAVIGATION
-document.querySelectorAll('.tab-btn').forEach(btn => {
+async function showJobResults(job) {
+  currentJob = job.id;
+  if ($('state-badge')) $('state-badge').textContent = states[job.status] || job.status;
+
+  if (job.status === 'failed') {
+    setWorking(false);
+    statusMessage(job.message || 'Falha na classificação da imagem.', true);
+    return;
+  }
+  if (job.status !== 'completed') {
+    setWorking(true);
+    statusMessage('Classificação em andamento no servidor C++…');
+    return;
+  }
+
+  setWorking(false);
+  statusMessage('Classificação concluída. Alterne as visões acima para explorar os mapas.');
+  await updateView('map');
+  if ($('result-bar')) $('result-bar').hidden = false;
+
+  const res = job.result;
+  if ($('result-metrics')) {
+    $('result-metrics').replaceChildren();
+    for (const [val, lbl] of [
+      [`${res.width.toLocaleString()} × ${res.height.toLocaleString()}`, 'Dimensões Originais'],
+      [res.windows.toLocaleString(), 'Janelas Processadas'],
+      [`${res.elapsed_seconds.toFixed(2)} s`, 'Tempo de Cálculo']
+    ]) {
+      const item = document.createElement('div');
+      item.className = 'metric-item';
+      item.innerHTML = `<span class="m-val">${val}</span><span class="m-lbl">${lbl}</span>`;
+      $('result-metrics').append(item);
+    }
+  }
+
+  if ($('dl-map')) $('dl-map').href = `api/jobs/${job.id}/map.tif`;
+  if ($('dl-original')) $('dl-original').href = `api/jobs/${job.id}/original_preview.pgm`;
+  if ($('dl-report')) $('dl-report').href = `api/jobs/${job.id}/report.json`;
+  if ($('clip-raster-name')) $('clip-raster-name').textContent = `Job #${job.id.substring(0, 8)}`;
+  if ($('exec-clip-btn')) $('exec-clip-btn').disabled = !currentGeoJSON;
+}
+
+async function refreshJobs() {
+  const data = await (await api('api/jobs')).json();
+  const jobs = data.jobs.sort((a, b) => b.created_at.localeCompare(a.created_at));
+
+  if ($('jobs-list')) {
+    $('jobs-list').replaceChildren();
+    if (!jobs.length) {
+      const p = document.createElement('p');
+      p.className = 'help';
+      p.textContent = 'Nenhuma execução registrada.';
+      $('jobs-list').append(p);
+    }
+    for (const j of jobs) {
+      const row = document.createElement('div');
+      row.className = 'job-row';
+      const openBtn = document.createElement('button');
+      openBtn.textContent = `${new Date(j.created_at).toLocaleTimeString('pt-BR')} · ${states[j.status] || j.status}`;
+      openBtn.onclick = () => showJobResults(j).catch(e => statusMessage(e.message, true));
+      row.append(openBtn);
+
+      if (['completed', 'failed'].includes(j.status)) {
+        const delBtn = document.createElement('button');
+        delBtn.className = 'del-btn';
+        delBtn.textContent = 'Excluir';
+        delBtn.onclick = async () => {
+          if (!confirm('Excluir esta execução e seus arquivos?')) return;
+          try {
+            await api(`api/jobs/${j.id}`, { method: 'DELETE' });
+            if (currentJob === j.id) {
+              currentJob = null;
+              if ($('result-bar')) $('result-bar').hidden = true;
+              if ($('viewport-canvas')) $('viewport-canvas').hidden = true;
+              if ($('viewport-empty')) $('viewport-empty').hidden = false;
+              if ($('state-badge')) $('state-badge').textContent = 'Aguardando operação';
+            }
+            await refreshJobs();
+          } catch (e) { statusMessage(e.message, true); }
+        };
+        row.append(delBtn);
+      }
+      $('jobs-list').append(row);
+    }
+  }
+
+  setWorking(data.busy);
+  const selected = jobs.find(j => j.id === currentJob) || (!currentJob && jobs.find(j => ['running', 'uploading'].includes(j.status)));
+  if (selected && (selected.status !== 'completed' || ($('result-bar') && $('result-bar').hidden))) {
+    await showJobResults(selected);
+  }
+
+  if (data.busy && !polling) {
+    polling = true;
+    setTimeout(async () => {
+      polling = false;
+      try { await refreshJobs(); } catch (e) { setWorking(false); statusMessage(e.message, true); }
+    }, 1000);
+  }
+}
+
+async function submitClassification(demo = false) {
+  if (!demo && $('classify-form') && !$('classify-form').reportValidity()) return;
+  const file = $('classify-file') ? $('classify-file').files[0] : null;
+  if (!demo && !file) { statusMessage('Escolha uma imagem TIFF para classificar.', true); return; }
+
+  setWorking(true);
+  if ($('result-bar')) $('result-bar').hidden = true;
+  if ($('viewport-canvas')) $('viewport-canvas').hidden = true;
+  if ($('viewport-empty')) $('viewport-empty').hidden = false;
+  statusMessage(demo ? 'Executando demonstração sintética…' : 'Enviando imagem TIFF…');
+  if ($('state-badge')) $('state-badge').textContent = 'Enviando';
+
+  try {
+    const response = await api(`${demo ? 'api/demo' : 'api/classify'}?${getClassifyParams()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/tiff' },
+      body: demo ? null : file
+    });
+    await showJobResults(await response.json());
+    await refreshJobs();
+  } catch (e) { setWorking(false); statusMessage(e.message, true); }
+}
+
+// BINDINGS AND INITIALIZATION
+document.querySelectorAll('.tool-btn').forEach(btn => {
   btn.onclick = () => {
-    document.querySelectorAll('.tab-btn').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
-    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tool-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
-    btn.setAttribute('aria-selected', 'true');
-    $(btn.dataset.tab).classList.add('active');
+    if ($(btn.dataset.tab)) $(btn.dataset.tab).classList.add('active');
   };
 });
 
-// VIEWER CONTROLS
-$('view-map').onclick = () => updateView('map');
-$('view-original').onclick = () => updateView('original');
-$('view-overlay').onclick = () => updateView('overlay');
-$('view-clipped').onclick = () => updateView('clipped');
+if ($('toggle-sidebar-btn')) {
+  $('toggle-sidebar-btn').onclick = () => {
+    if ($('control-dock')) $('control-dock').classList.toggle('collapsed');
+  };
+}
 
-// FORM & BUTTON BINDINGS
-$('form').onsubmit = e => { e.preventDefault(); submit(); };
-$('demo').onclick = () => submit(true);
-$('file').onchange = () => { $('filename').textContent = $('file').files[0]?.name || 'Escolha ou arraste um TIFF'; };
-$('drop').ondragover = e => { e.preventDefault(); $('drop').classList.add('drag'); };
-$('drop').ondragleave = () => $('drop').classList.remove('drag');
-$('drop').ondrop = e => {
-  e.preventDefault();
-  $('drop').classList.remove('drag');
-  if (e.dataTransfer.files.length) {
-    $('file').files = e.dataTransfer.files;
-    $('file').onchange();
-  }
+if ($('v-map')) $('v-map').onclick = () => updateView('map');
+if ($('v-original')) $('v-original').onclick = () => updateView('original');
+if ($('v-vector')) $('v-vector').onclick = () => updateView('vector');
+if ($('v-clipped')) $('v-clipped').onclick = () => updateView('clipped');
+
+if ($('vector-file')) $('vector-file').onchange = () => handleVectorUpload($('vector-file').files[0]);
+if ($('raster-file')) $('raster-file').onchange = () => handleRasterInspect($('raster-file').files[0]);
+
+if ($('classify-file')) $('classify-file').onchange = () => {
+  if ($('classify-filename')) $('classify-filename').textContent = $('classify-file').files[0]?.name || 'Escolha a Imagem TIFF';
 };
 
-$('shape-file').onchange = () => handleShapeUpload($('shape-file').files[0]);
-$('shape-drop').ondragover = e => { e.preventDefault(); $('shape-drop').classList.add('drag'); };
-$('shape-drop').ondragleave = () => $('shape-drop').classList.remove('drag');
-$('shape-drop').ondrop = e => {
-  e.preventDefault();
-  $('shape-drop').classList.remove('drag');
-  if (e.dataTransfer.files.length) {
-    $('shape-file').files = e.dataTransfer.files;
-    handleShapeUpload(e.dataTransfer.files[0]);
-  }
-};
+if ($('classify-form')) $('classify-form').onsubmit = e => { e.preventDefault(); submitClassification(); };
+if ($('demo-btn')) $('demo-btn').onclick = () => submitClassification(true);
 
-if ($('clip-btn')) $('clip-btn').onclick = () => performClip();
+if ($('exec-clip-btn')) $('exec-clip-btn').onclick = () => executeSpatialClip();
 
-$('mode').onchange = () => {
-  const patches = $('mode').value === 'patches';
-  $('classes-field').hidden = patches;
-  $('homogeneity-field').hidden = !patches;
-  $('method-help').textContent = patches ?
-    'Une janelas vizinhas semelhantes. Valores maiores de homogeneidade permitem unir regiões mais diferentes.' :
-    'Agrupa janelas com características semelhantes. Os tons representam classes visuais.';
-};
+if ($('mode')) {
+  $('mode').onchange = () => {
+    const patches = $('mode').value === 'patches';
+    if ($('classes-field')) $('classes-field').hidden = patches;
+    if ($('homogeneity-field')) $('homogeneity-field').hidden = !patches;
+  };
+}
 
-refresh().catch(e => message(e.message, true));
+refreshJobs().catch(e => statusMessage(e.message, true));

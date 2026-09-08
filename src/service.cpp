@@ -97,7 +97,6 @@ void original_preview(const std::filesystem::path& source, const std::filesystem
         for (std::uint32_t x = 0; x < pw; ++x) {
             std::size_t idx = (x * step) * spp;
             if (spp >= 3) {
-                // RGB intensity conversion
                 small[x] = static_cast<unsigned char>(0.299 * row[idx] + 0.587 * row[idx + 1] + 0.114 * row[idx + 2]);
             } else {
                 small[x] = row[idx];
@@ -151,6 +150,43 @@ ClipResult clip_job(const std::filesystem::path& directory, const VectorShape& s
     auto res = clip_raster(cfg);
     original_preview(directory / "clipped.tif", directory / "clipped_preview.pgm");
     return res;
+}
+
+Json inspect_raster(const std::filesystem::path& path) {
+    std::unique_ptr<TIFF, decltype(&TIFFClose)> tif(sister_image::open_tiff(path.c_str(), "r"), TIFFClose);
+    if (!tif) throw std::runtime_error("Nao foi possivel abrir imagem TIFF para inspecao");
+    std::uint32_t width{}, height{};
+    std::uint16_t spp{1}, bps{8}, photo{0};
+    TIFFGetField(tif.get(), TIFFTAG_IMAGEWIDTH, &width);
+    TIFFGetField(tif.get(), TIFFTAG_IMAGELENGTH, &height);
+    TIFFGetField(tif.get(), TIFFTAG_SAMPLESPERPIXEL, &spp);
+    TIFFGetField(tif.get(), TIFFTAG_BITSPERSAMPLE, &bps);
+    TIFFGetField(tif.get(), TIFFTAG_PHOTOMETRIC, &photo);
+
+    double scale[3] = {1.0, 1.0, 0.0};
+    double tie[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    uint32_t scale_count = 0, tie_count = 0;
+    double *scale_ptr = nullptr, *tie_ptr = nullptr;
+
+    bool has_scale = (TIFFGetField(tif.get(), 33550, &scale_count, &scale_ptr) == 1 && scale_count >= 2);
+    bool has_tie = (TIFFGetField(tif.get(), 33922, &tie_count, &tie_ptr) == 1 && tie_count >= 6);
+
+    if (has_scale) { scale[0] = scale_ptr[0]; scale[1] = scale_ptr[1]; }
+    if (has_tie) { tie[3] = tie_ptr[3]; tie[4] = tie_ptr[4]; }
+
+    return {
+        {"width", width},
+        {"height", height},
+        {"channels", spp},
+        {"bits_per_sample", bps},
+        {"photometric", photo},
+        {"has_geotiff_tags", has_scale && has_tie},
+        {"scale_x", scale[0]},
+        {"scale_y", scale[1]},
+        {"tie_x", tie[3]},
+        {"tie_y", tie[4]},
+        {"digest", digest(path)}
+    };
 }
 
 void make_demo(const std::filesystem::path& path) {

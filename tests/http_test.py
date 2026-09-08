@@ -11,6 +11,9 @@ import urllib.request
 import urllib.error
 import jsonschema
 
+# Force bypass of system HTTP proxies for local loopback connections
+urllib.request.install_opener(urllib.request.build_opener(urllib.request.ProxyHandler({})))
+
 binary, project = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
 
 def request(base, path, method='GET', data=None, headers=None, expected=200):
@@ -32,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix='sister-image-http-') as temp:
             sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
         base=f'http://127.0.0.1:{port}'
         token='test-only-proxy-token-0123456789abcdef'
-        env=dict(os.environ,SISTER_IMAGE_ACCESS_MODE=access,SISTER_IMAGE_PROXY_TOKEN=token)
+        env=dict(os.environ,SISTER_IMAGE_ACCESS_MODE=access,SISTER_IMAGE_PROXY_TOKEN=token,http_proxy='',https_proxy='',HTTP_PROXY='',HTTPS_PROXY='',no_proxy='127.0.0.1,localhost',NO_PROXY='127.0.0.1,localhost')
         with (root/'server.log').open('w') as log:
             proc=subprocess.Popen([str(binary),'--port',str(port),'--data',str(root/access),'--web',str(project/'web')],env=env,stdout=log,stderr=log)
             try:
