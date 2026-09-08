@@ -102,6 +102,10 @@ binding no início da execução.
 ../sister-infra/bin/sister-infra dev preview . --duration 30
 ```
 
+Antes de iniciar o preview, encerre uma sessão local com `./scripts/dev.sh stop`.
+O Infra atual exporta o binário qualificado para `build/`, o que requer que
+esse executável não esteja em uso.
+
 O preview recebe binding e diretórios exclusivos do Infra. Consome todos os
 marcadores `SISTER_RUNTIME_*`, confere identidade de PID e não reutiliza dados
 ou processos LAB. `start` não compila, `start/stop` são idempotentes e releases
