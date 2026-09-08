@@ -50,7 +50,9 @@ with tempfile.TemporaryDirectory(prefix='sister-image-http-') as temp:
                 if access=='proxy':request(base,'/api/jobs',expected=401)
                 request(base,'/api/demo','POST',b'',dict(headers,Origin='https://untrusted.invalid'),403)
                 request(base,'/api/demo?window=-1','POST',b'',headers,400)
+                request(base,'/api/demo','POST',b'x'*70001,headers,413)
                 job=request(base,'/api/demo?window=32&classes=3','POST',b'',headers,202)
+                jsonschema.validate(job,json.loads((project/'contracts/job.schema.json').read_text()))
                 for _ in range(100):
                     done=request(base,'/api/jobs/'+job['id'],headers=headers)
                     if done['status'] in ('completed','failed'):break

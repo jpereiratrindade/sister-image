@@ -41,7 +41,8 @@ imagens nem base64. A thread científica única evita multiplicar as alocações
 por uploads concorrentes. Os demais handlers permanecem disponíveis.
 
 Além das estruturas próprias, libtiff e codecs mantêm seus buffers internos;
-O(largura + janelas) descreve o algoritmo e não é garantia absoluta de RSS.
+O mmap padrão da libtiff é desativado; o decoder recebe limite de 64 MiB por
+alocação. O(largura + janelas) descreve o algoritmo e não é garantia absoluta de RSS.
 Limites de entrada e buffers são conferidos antes de alocações próprias.
 
 ## Decisão 004 — custódia e autorização

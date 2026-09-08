@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "status",
+    "configuration",
+    "created_at"
+  ],
+  "properties": {
+    "schema": {
+      "const": "sister.image.job/1.0.0"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "status": {
+      "enum": [
+        "uploading",
+        "running",
+        "completed",
+        "failed"
+      ]
+    },
+    "configuration": {
+      "type": "object"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "result": {
+      "type": "object"
+    },
+    "message": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

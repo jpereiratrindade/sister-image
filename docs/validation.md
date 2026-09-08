@@ -40,5 +40,10 @@ exportação e geração de preview; o tempo total externo inclui também hashes
 
 ## Integração operacional
 
-Inspeção pelo `sister-component` passou. Qualificação isolada e DEV Preview são
-registrados na conclusão deste incremento. O LAB não é alterado pelos testes.
+Inspeção e qualificação isolada pelo `sister-component` passaram, incluindo
+checkout limpo, build Release, CTest e digest do artefato. O DEV Preview
+executou em porta dinâmica, respondeu aos probes e terminou com status
+`TERMINATED`, com sua sandbox removida. O LAB não foi alterado.
+
+A evidência completa pode ser reproduzida pelos comandos do README. A admissão
+na composição da instalação e a extensão Ed25519 não são alegadas por esses testes.

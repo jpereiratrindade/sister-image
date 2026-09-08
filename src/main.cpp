@@ -119,6 +119,31 @@ int main(int argc, char** argv) {
             }
             return true;
         };
+        server.set_pre_routing_handler([&](const httplib::Request& req, httplib::Response& res) {
+            if ((req.path.starts_with("/api/") || req.path == "/identity" || req.path == "/echo") &&
+                !authorized(req, res, req.path == "/identity" || req.path == "/echo")) {
+                return httplib::Server::HandlerResponse::Handled;
+            }
+            if (req.method != "GET" && req.method != "HEAD") {
+                if (req.path != "/api/classify" && req.path != "/api/demo" && req.path != "/echo" && req.method != "DELETE") {
+                    error(res, 404, "Rota desconhecida");
+                    return httplib::Server::HandlerResponse::Handled;
+                }
+                if (req.path != "/api/classify") {
+                    const auto size = req.get_header_value("Content-Length");
+                    try {
+                        if (req.has_header("Transfer-Encoding") || (!size.empty() && std::stoull(size) > 70000)) {
+                            error(res, 413, "Payload fora do limite desta operacao");
+                            return httplib::Server::HandlerResponse::Handled;
+                        }
+                    } catch (...) {
+                        error(res, 400, "Content-Length invalido");
+                        return httplib::Server::HandlerResponse::Handled;
+                    }
+                }
+            }
+            return httplib::Server::HandlerResponse::Unhandled;
+        });
         server.Get("/health", [&](const auto&, auto& r) { respond(r, {{"schema", "sister.subsystem.health/1.0.0"}, {"system_id", "sister_image"}, {"status", "ok"}, {"checked_at", now()}}); });
         server.Get("/ready", [&](const auto&, auto& r) { respond(r, {{"schema", "sister.subsystem.readiness/1.0.0"}, {"system_id", "sister_image"}, {"status", "ready"}, {"contract_version", "1.0.0"}, {"manifest_digest", manifest_digest}, {"dependencies", Json::object()}, {"degraded_capabilities", Json::array()}}); });
         server.Get("/manifest", [&](const auto&, auto& r) { respond(r, manifest); });
@@ -194,7 +219,7 @@ int main(int argc, char** argv) {
                         busy = false; error(res, 507, "Libere execucoes antigas ou espaco em disco antes de enviar"); return;
                     }
                     fs::create_directory(dir);
-                    save_json(dir / "status.json", {{"id", id}, {"status", "uploading"}, {"created_at", now()}, {"configuration", options}});
+                    save_json(dir / "status.json", {{"schema", "sister.image.job/1.0.0"}, {"id", id}, {"status", "uploading"}, {"created_at", now()}, {"configuration", options}});
                 }
                 if (reader) {
                     if (req.get_header_value("Content-Type") != "image/tiff" && req.get_header_value("Content-Type") != "application/octet-stream") throw std::invalid_argument("Envie TIFF binario");
@@ -208,7 +233,7 @@ int main(int argc, char** argv) {
                     file.close();
                     if (!ok || !file || bytes < 8) throw std::invalid_argument("Upload incompleto, vazio ou superior a 1 GiB");
                 } else make_demo(dir / "input.tif");
-                Json status = {{"id", id}, {"status", "running"}, {"created_at", now()}, {"configuration", options}};
+                Json status = {{"schema", "sister.image.job/1.0.0"}, {"id", id}, {"status", "running"}, {"created_at", now()}, {"configuration", options}};
                 { std::lock_guard guard(state_mutex); save_json(dir / "status.json", status); }
                 if (worker.joinable()) worker.join();
                 worker = std::thread([&, dir, options, status]() mutable {

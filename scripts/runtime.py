@@ -51,7 +51,7 @@ def process_identity(pid):
         stat = (proc / 'stat').read_text().rsplit(')', 1)[1].split()
         if stat[0] == 'Z':
             return None
-        return {'start': stat[19], 'exe': str((proc / 'exe').resolve()),
+        return {'start': stat[19], 'exe': str((proc / 'exe').resolve()).removesuffix(' (deleted)'),
                 'args': (proc / 'cmdline').read_bytes().split(b'\0')[:-1]}
     except (OSError, IndexError):
         return None
