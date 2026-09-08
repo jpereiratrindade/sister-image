@@ -6,12 +6,14 @@ Converts JPEG 2000 Sentinel satellite imagery to GeoTIFF and extracts spatial me
 import json
 import math
 import os
+import re
 import sys
 from pathlib import Path
 from PIL import Image, ImageFile, TiffImagePlugin
 import numpy as np
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
+Image.MAX_IMAGE_PIXELS = None
 
 def utm_to_latlon(easting, northing, zone=22, southern=True):
     a = 6378137.0
@@ -63,7 +65,71 @@ def utm_to_latlon(easting, northing, zone=22, southern=True):
 
     return lat, lon
 
+def parse_gmljp2_box(path_str):
+    try:
+        with open(path_str, 'rb') as f:
+            data = f.read(500000)
+
+        pos = data.find(b'<gml:RectifiedGrid')
+        if pos == -1:
+            pos = data.find(b'<gml:FeatureCollection')
+        if pos == -1:
+            return None
+
+        end = data.find(b'</gml:FeatureCollection>', pos)
+        if end == -1:
+            end = data.find(b'</gml:RectifiedGridCoverage>', pos)
+        if end == -1:
+            end = pos + 10000
+
+        snippet = data[pos:end+50].decode('utf-8', errors='ignore')
+
+        epsg = 32722
+        m_epsg = re.search(r'srsName=[\"\']urn:ogc:def:crs:EPSG::(\d+)[\"\']', snippet)
+        if m_epsg:
+            epsg = int(m_epsg.group(1))
+
+        m_pos = re.search(r'<gml:pos>\s*([\d\.-]+)\s+([\d\.-]+)\s*</gml:pos>', snippet)
+        tie_x, tie_y = 0.0, 0.0
+        if m_pos:
+            tie_x, tie_y = float(m_pos.group(1)), float(m_pos.group(2))
+
+        offsets = re.findall(r'<gml:offsetVector[^>]*>\s*([\d\.-]+)\s+([\d\.-]+)\s*</gml:offsetVector>', snippet)
+        scale_x, scale_y = 10.0, 10.0
+        if offsets:
+            try:
+                scale_x = abs(float(offsets[0][0]))
+                scale_y = abs(float(offsets[1][1]))
+            except Exception:
+                pass
+
+        zone = 22
+        southern = True
+        if 32601 <= epsg <= 32660:
+            zone = epsg - 32600
+            southern = False
+        elif 32701 <= epsg <= 32760:
+            zone = epsg - 32700
+            southern = True
+
+        return {
+            'epsg': epsg,
+            'tie_x': tie_x,
+            'tie_y': tie_y,
+            'scale_x': scale_x,
+            'scale_y': scale_y,
+            'crs': f"EPSG:{epsg} (WGS 84 / UTM zone {zone}{'S' if southern else 'N'})",
+            'zone': zone,
+            'southern': southern
+        }
+    except Exception:
+        return None
+
 def extract_spatial_tags(img, path_str=""):
+    gml = parse_gmljp2_box(path_str)
+    if gml and gml['tie_x'] > 0:
+        return gml['scale_x'], gml['scale_y'], gml['tie_x'], gml['tie_y'], gml['crs'], gml['zone'], gml['southern']
+
     scale_x, scale_y = 10.0, 10.0
     tie_x, tie_y = 0.0, 0.0
     crs = "WGS 84 / UTM zone 22S"
@@ -81,7 +147,6 @@ def extract_spatial_tags(img, path_str=""):
         if 34737 in tags:
             crs = str(tags[34737]).replace('\x00', '')
 
-    # Try extracting UTM zone from CRS or filename (e.g. T22JBL)
     import re
     m = re.search(r'zone\s*(\d+)([NSns]?)', crs, re.IGNORECASE)
     if not m:
@@ -98,9 +163,7 @@ def inspect_jp2(path):
     width, height = img.size
     mode = img.mode
     channels = len(img.getbands()) if hasattr(img, 'getbands') else 1
-
-    arr = np.array(img)
-    bps = 16 if arr.dtype == np.uint16 or mode.startswith('I') else 8
+    bps = 16 if ('16' in mode or mode.startswith('I') or mode.startswith('F')) else 8
 
     scale_x, scale_y, tie_x, tie_y, crs, zone, southern = extract_spatial_tags(img, str(path))
 
@@ -166,8 +229,13 @@ def convert_jp2_to_tiff(input_path, output_path):
     else:
         raise ValueError(f"Dimensão de imagem JP2 não suportada: {arr.ndim}")
 
-    tiffinfo = {}
-    if hasattr(img, 'tag_v2'):
+    tiffinfo = TiffImagePlugin.ImageFileDirectory_v2()
+    gml_meta = parse_gmljp2_box(input_path)
+    if gml_meta and gml_meta['tie_x'] > 0:
+        tiffinfo[33550] = (gml_meta['scale_x'], gml_meta['scale_y'], 0.0)
+        tiffinfo[33922] = (0.0, 0.0, 0.0, gml_meta['tie_x'], gml_meta['tie_y'], 0.0)
+        tiffinfo[34737] = gml_meta['crs']
+    elif hasattr(img, 'tag_v2'):
         try:
             for tag_id in [33550, 33922, 34735, 34737]:
                 if tag_id in img.tag_v2:
@@ -175,10 +243,7 @@ def convert_jp2_to_tiff(input_path, output_path):
         except Exception:
             pass
 
-    if tiffinfo:
-        out_img.save(output_path, format='TIFF', tiffinfo=tiffinfo)
-    else:
-        out_img.save(output_path, format='TIFF')
+    out_img.save(output_path, format='TIFF', tiffinfo=tiffinfo)
     return True
 
 if __name__ == '__main__':

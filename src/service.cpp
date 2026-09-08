@@ -143,6 +143,8 @@ Json classify(const std::filesystem::path& directory, const Json& config) {
     preview(directory / "map.tif", directory / "preview.pgm");
     original_preview(directory / "input.tif", directory / "original_preview.pgm");
     const auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
+    Json raster_info;
+    try { raster_info = inspect_raster(directory / "input.tif"); } catch (...) {}
     Json report = {{"schema", "sister.image.result/1.0.0"}, {"algorithm", "sister-window-features/1.0.0"},
         {"configuration", config}, {"width", result.width_px}, {"height", result.height_px},
         {"windows", result.windows.size()}, {"skipped_windows", result.skipped_windows},
@@ -150,6 +152,7 @@ Json classify(const std::filesystem::path& directory, const Json& config) {
         {"elapsed_seconds", elapsed}, {"completed_at", now()},
         {"input_digest", digest(directory / "input.tif")}, {"output_digest", digest(directory / "map.tif")},
         {"features", {"mean_intensity", "stddev_intensity", "mean_abs_dx"}},
+        {"raster_info", raster_info},
         {"interpretation", "Classes visuais nao supervisionadas; tons nao sao categorias semanticas nem probabilidades."},
         {"export", "BigTIFF uint8; dimensoes originais e tags GeoTIFF basicas preservadas"}};
     save_json(directory / "report.json", report);

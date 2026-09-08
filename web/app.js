@@ -478,6 +478,9 @@ async function executeSpatialClip() {
 
 async function showJobResults(job) {
   currentJob = job.id;
+  if (job.result && job.result.raster_info) {
+    currentRasterInfo = job.result.raster_info;
+  }
   if ($('state-badge')) $('state-badge').textContent = states[job.status] || job.status;
 
   if (job.status === 'failed') {
