@@ -166,6 +166,15 @@ ClipResult clip_job(const std::filesystem::path& directory, const VectorShape& s
     cfg.shape = shape;
     cfg.mask_outside = true;
     cfg.nodata_val = 0;
+    try {
+        Json info = inspect_raster(cfg.input_tiff);
+        if (info.contains("zone") && info["zone"].is_number()) {
+            cfg.zone = info["zone"].get<int>();
+        }
+        if (info.contains("southern") && info["southern"].is_boolean()) {
+            cfg.southern = info["southern"].get<bool>();
+        }
+    } catch (...) {}
     auto res = clip_raster(cfg);
     original_preview(directory / "clipped.tif", directory / "clipped_preview.pgm");
     return res;

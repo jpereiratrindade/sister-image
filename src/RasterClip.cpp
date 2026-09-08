@@ -117,8 +117,25 @@ ClipResult clip_raster(const ClipConfig& config) {
     VectorShape px_shape = config.shape;
     if (has_scale && has_tie && scale[0] > 0 && scale[1] > 0) {
         bool is_latlon = (px_shape.min_x >= -180.0 && px_shape.max_x <= 180.0 && px_shape.min_y >= -90.0 && px_shape.max_y <= 90.0);
-        int zone = 22;
-        bool southern = true;
+        int zone = config.zone > 0 ? config.zone : 22;
+        bool southern = config.southern;
+
+        if (has_keys && key_ptr && key_count >= 4) {
+            uint16_t num_keys = key_ptr[3];
+            for (uint16_t i = 0; i < num_keys && (4 + i * 4 + 3) < key_count; ++i) {
+                uint16_t key_id = key_ptr[4 + i * 4];
+                uint16_t val = key_ptr[4 + i * 4 + 3];
+                if (key_id == 3072) { // ProjectedCSTypeGeoKey
+                    if (val >= 32701 && val <= 32760) {
+                        zone = val - 32700;
+                        southern = true;
+                    } else if (val >= 32601 && val <= 32660) {
+                        zone = val - 32600;
+                        southern = false;
+                    }
+                }
+            }
+        }
 
         for (auto& poly : px_shape.polygons) {
             for (auto& pt : poly.outer_ring) {

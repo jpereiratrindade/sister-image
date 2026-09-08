@@ -18,6 +18,8 @@ struct ClipConfig {
     VectorShape shape;
     bool mask_outside{true};
     uint8_t nodata_val{0};
+    int zone{22};
+    bool southern{true};
 };
 
 struct ClipResult {
