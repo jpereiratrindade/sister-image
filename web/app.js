@@ -6,6 +6,7 @@ let currentGeoJSON = null;
 let currentRasterInfo = null;
 let currentClippedInfo = null;
 let currentViewMode = 'map';
+let currentActiveRasterMode = 'original';
 let polling = false;
 
 const states = { uploading: 'Enviando', running: 'Processando', completed: 'Concluída', failed: 'Falhou' };
@@ -393,21 +394,24 @@ async function renderLeafletMap(geojson) {
     }).addTo(leafletInstance);
   }
 
-  if (currentJob && currentClippedInfo && currentClippedInfo.latlon_bounds) {
+  if (currentJob) {
     try {
-      await renderPGM(`api/jobs/${currentJob}/clipped_preview.pgm`);
-      if (canvas) canvas.hidden = true;
-    } catch (e) {}
-  } else if (currentJob && (!canvas || canvas.width === 0 || canvas.hidden)) {
-    try {
-      await renderPGM(`api/jobs/${currentJob}/original_preview.pgm`);
+      if (currentActiveRasterMode === 'clipped' && currentClippedInfo && currentClippedInfo.latlon_bounds) {
+        await renderPGM(`api/jobs/${currentJob}/clipped_preview.pgm`);
+      } else if (currentActiveRasterMode === 'classified') {
+        await renderPGM(`api/jobs/${currentJob}/preview.pgm`);
+      } else {
+        await renderPGM(`api/jobs/${currentJob}/original_preview.pgm`);
+      }
       if (canvas) canvas.hidden = true;
     } catch (e) {}
   }
 
   let finalFitBounds = null;
   let rasterLatLngBounds = null;
-  const activeInfo = (currentClippedInfo && currentClippedInfo.latlon_bounds) ? currentClippedInfo : currentRasterInfo;
+  const activeInfo = (currentActiveRasterMode === 'clipped' && currentClippedInfo && currentClippedInfo.latlon_bounds)
+    ? currentClippedInfo
+    : currentRasterInfo;
 
   if (activeInfo && activeInfo.latlon_bounds) {
     const rb = activeInfo.latlon_bounds;
@@ -435,14 +439,14 @@ async function renderLeafletMap(geojson) {
     } catch (e) {}
   }
 
-  if (activeInfo && geojson && rasterLatLngBounds && leafletGeoJsonLayer) {
-    const rb = activeInfo.latlon_bounds;
+  if (currentRasterInfo && currentRasterInfo.latlon_bounds && geojson && leafletGeoJsonLayer) {
+    const rb = currentRasterInfo.latlon_bounds;
     const vb = geojson.bbox || [0, 0, 0, 0];
     const overlap = !(rb[2] < vb[1] || rb[0] > vb[3] || rb[3] < vb[0] || rb[1] > vb[2]);
     if (overlap) {
-      statusMessage(`🟢 Coincidência Espacial Verificada: Imagem (${activeInfo.crs || 'UTM'}) e Vetor sobrepostos em perfeito alinhamento.`);
+      statusMessage(`🟢 Coincidência Espacial Verificada: Imagem Sentinel (${currentRasterInfo.crs || 'UTM'}) e Vetor sobrepostos em perfeito alinhamento.`);
     } else {
-      statusMessage(`⚠️ Atenção: Os envelopes da imagem e do vetor não coincidem espacialmente na mesma região.`, true);
+      statusMessage(`⚠️ Atenção: Os envelopes da imagem Sentinel e do vetor não coincidem espacialmente na mesma região.`, true);
     }
   }
 
@@ -458,6 +462,9 @@ async function renderLeafletMap(geojson) {
 
 async function updateView(mode) {
   currentViewMode = mode;
+  if (['classified', 'original', 'clipped'].includes(mode)) {
+    currentActiveRasterMode = mode;
+  }
   document.querySelectorAll('.v-btn').forEach(b => b.classList.remove('active'));
   if ($('v-' + mode)) $('v-' + mode).classList.add('active');
 
