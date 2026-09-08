@@ -274,7 +274,7 @@ function drawVectorOverlay(ctx, width, height, geojson) {
   }
 }
 
-// Render raw PGM image preview to canvas
+// Render raw PGM/PPM image preview to canvas
 async function renderPGM(path) {
   const response = await api(path);
   const bytes = new Uint8Array(await response.arrayBuffer());
@@ -283,9 +283,16 @@ async function renderPGM(path) {
     if (bytes[end++] === 10) lines++;
   }
   const header = new TextDecoder().decode(bytes.slice(0, end)).trim().split(/\s+/);
+  const magic = header[0];
   const width = Number(header[1]), height = Number(header[2]);
-  if (header[0] !== 'P5' || width > 2048 || height > 2048 || bytes.length - end !== width * height) {
-    throw Error('Prévia PGM inválida.');
+  if ((magic !== 'P5' && magic !== 'P6') || width > 4096 || height > 4096) {
+    throw Error('Prévia de imagem inválida.');
+  }
+
+  const isRGB = (magic === 'P6');
+  const expectedLen = isRGB ? width * height * 3 : width * height;
+  if (bytes.length - end < expectedLen) {
+    throw Error('Dados da prévia de imagem truncados.');
   }
 
   const canvas = $('viewport-canvas');
@@ -293,10 +300,29 @@ async function renderPGM(path) {
   canvas.height = height;
   const ctx = canvas.getContext('2d');
   const image = ctx.createImageData(width, height);
-  for (let i = 0; i < width * height; i++) {
-    const c = bytes[end + i];
-    image.data.set([c, c, c, 255], i * 4);
+  const data = image.data;
+
+  if (isRGB) {
+    let p = end;
+    for (let i = 0; i < width * height; i++) {
+      const idx = i * 4;
+      data[idx]     = bytes[p++];
+      data[idx + 1] = bytes[p++];
+      data[idx + 2] = bytes[p++];
+      data[idx + 3] = 255;
+    }
+  } else {
+    let p = end;
+    for (let i = 0; i < width * height; i++) {
+      const c = bytes[p++];
+      const idx = i * 4;
+      data[idx]     = c;
+      data[idx + 1] = c;
+      data[idx + 2] = c;
+      data[idx + 3] = 255;
+    }
   }
+
   ctx.putImageData(image, 0, 0);
   canvas.hidden = false;
   if ($('viewport-empty')) $('viewport-empty').hidden = true;
@@ -468,7 +494,7 @@ async function renderLeafletMap(geojson) {
   if (currentJob && canvas && canvas.width > 0 && rasterLatLngBounds && rasterLatLngBounds.isValid && rasterLatLngBounds.isValid()) {
     try {
       const dataUrl = canvas.toDataURL('image/png');
-      leafletRasterOverlay = L.imageOverlay(dataUrl, rasterLatLngBounds, { pane: 'rasterPane', opacity: 0.85 }).addTo(leafletInstance);
+      leafletRasterOverlay = L.imageOverlay(dataUrl, rasterLatLngBounds, { pane: 'rasterPane', opacity: 0.95 }).addTo(leafletInstance);
     } catch (e) {}
   }
 
