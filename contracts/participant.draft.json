@@ -1,0 +1,61 @@
+{
+  "schema": "sister.participant/2.0.0",
+  "contract_status": "DRAFT",
+  "runtime_normative": false,
+  "participant_id": "sister_image",
+  "name": "SisTer Image",
+  "version": "0.1.0",
+  "owner": "Equipe SisTer Image",
+  "identity": {
+    "stable_id": "sister_image",
+    "declared_by": "Equipe SisTer Image"
+  },
+  "authority_scopes": [
+    {
+      "scope": "image.visual_classification",
+      "responsibility": "Classificacao visual e evidencias de imagens fornecidas pelo operador",
+      "decision_owner": "sister_image"
+    }
+  ],
+  "capabilities": [
+    {
+      "capability_id": "image.regions.classify",
+      "version": "1.0.0",
+      "purpose": "Classificar regioes por intensidade e textura preservando proveniencia",
+      "input_contract": {
+        "schema_id": "sister.image.classification",
+        "version": "1.0.0"
+      },
+      "output_contract": {
+        "schema_id": "sister.image.result",
+        "version": "1.0.0"
+      },
+      "decision_authority": {
+        "scope": "image.visual_classification",
+        "owner": "sister_image"
+      },
+      "side_effect": "participant_state_change",
+      "preconditions": [
+        "TIFF uint8 RGB ou cinza com dimensoes e parametros suportados"
+      ],
+      "evidence_requirements": [
+        "hash da entrada e saida, parametros e versao do algoritmo"
+      ]
+    }
+  ],
+  "relation_roles": [
+    "image-classification-provider",
+    "capability-provider"
+  ],
+  "state_declarations": [
+    {
+      "state_id": "participant.ready",
+      "meaning": "Prontidao operacional nao implica autorizacao de participacao",
+      "declared_by": "sister_image"
+    }
+  ],
+  "provenance": {
+    "source_ref": "sister-image participant declaration",
+    "declared_at": "2026-09-08T12:00:00Z"
+  }
+}

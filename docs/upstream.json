@@ -1,0 +1,62 @@
+[
+  {
+    "source": "obce_gui/src/RasterWindowAnalysis.cpp",
+    "destination": "src/RasterWindowAnalysis.cpp",
+    "upstream_sha256": "d25d5dd49fd070ae84c54cc4515fcc8f3292aec8e1382519f4ccc90e802b8d85"
+  },
+  {
+    "source": "obce_gui/include/obce_gui/RasterWindowAnalysis.hpp",
+    "destination": "include/obce_gui/RasterWindowAnalysis.hpp",
+    "upstream_sha256": "fc00791e5825a90d79656ec3c79a069162150c25c68a959f5aa8ab6f50092198"
+  },
+  {
+    "source": "obce/LICENSE",
+    "destination": "vendor/obce/LICENSE",
+    "upstream_sha256": "1126322e2cc8d165adc4c792eeb195717de2bcc7b39be1ce77959d78e87ef685"
+  },
+  {
+    "source": "obce_gui/LICENSE",
+    "destination": "LICENSE",
+    "upstream_sha256": "1126322e2cc8d165adc4c792eeb195717de2bcc7b39be1ce77959d78e87ef685"
+  },
+  {
+    "source": "Agent/third_party/vendor/httplib.h",
+    "destination": "vendor/httplib.h",
+    "upstream_sha256": "c28b8aa09d70175aad8e48ae5271407fd60223af1de0decb9caafa1ad2e5b64c"
+  },
+  {
+    "source": "obce/build/_deps/nlohmann_json-src/single_include/nlohmann/json.hpp",
+    "destination": "vendor/nlohmann/json.hpp",
+    "upstream_sha256": "9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6"
+  },
+  {
+    "source": "obce/build/_deps/nlohmann_json-src/LICENSE.MIT",
+    "destination": "vendor/nlohmann/LICENSE.MIT",
+    "upstream_sha256": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14"
+  },
+  {
+    "source": "obce/src/NormalityModel.cpp",
+    "destination": "vendor/obce/src/NormalityModel.cpp",
+    "upstream_sha256": "4613346f76f4aff9740678231216136d9dd3da3fea8d83cd34911201911a66b5"
+  },
+  {
+    "source": "obce/include/obce/NormalityModel.hpp",
+    "destination": "vendor/obce/include/obce/NormalityModel.hpp",
+    "upstream_sha256": "58cb5415be82c7b968c1ad9458042ffe0e4e1f6c0552a732b96f8a783b04baf7"
+  },
+  {
+    "source": "obce/src/RegimeStateMachine.cpp",
+    "destination": "vendor/obce/src/RegimeStateMachine.cpp",
+    "upstream_sha256": "aa1b8e29e79ecd099eaf240af4364222dc8875766311e4bbca74ad1fbf976a40"
+  },
+  {
+    "source": "obce/include/obce/RegimeStateMachine.hpp",
+    "destination": "vendor/obce/include/obce/RegimeStateMachine.hpp",
+    "upstream_sha256": "350086279311c6bc3341aee5ae7b0fcbb19205f65d8be4be560194156d331048"
+  },
+  {
+    "source": "obce/include/obce/Label.hpp",
+    "destination": "vendor/obce/include/obce/Label.hpp",
+    "upstream_sha256": "9c4ac5aff085084645edcabdbfd1859e5152bf584f0d77e55b44c2d2df672143"
+  }
+]

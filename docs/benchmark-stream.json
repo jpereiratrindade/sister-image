@@ -1,0 +1,30 @@
+{
+  "algorithm": "obce-window-features/1.0.0",
+  "completed_at": "2026-09-08T12:13:50Z",
+  "configuration": {
+    "classes": 7,
+    "homogeneity": 0.85,
+    "ignore_zero": true,
+    "min_valid": 0.25,
+    "mode": "classes",
+    "nodata": [],
+    "window": 512
+  },
+  "elapsed_seconds": 2.772909258,
+  "export": "BigTIFF uint8; dimensoes originais e tags GeoTIFF basicas preservadas",
+  "features": [
+    "mean_intensity",
+    "stddev_intensity",
+    "mean_abs_dx"
+  ],
+  "height": 18238,
+  "ignored_pixels": 127807087,
+  "input_digest": "sha256:c631db7d06fcf4f36c2ee2a7590e1a5a72aaa3741ed9d36dff9ee99d0dd6dec5",
+  "interpretation": "Classes visuais nao supervisionadas; tons nao sao categorias semanticas nem probabilidades.",
+  "output_digest": "sha256:0937e4c83a7d8abfc20d1969ef55c66e560cd3a578843593cb60c3a5c93b1707",
+  "schema": "sister.image.result/1.0.0",
+  "skipped_windows": 471,
+  "valid_pixels": 207790351,
+  "width": 18401,
+  "windows": 825
+}

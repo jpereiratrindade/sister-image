@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sister.local/contracts/subsystem/1.0.0/echo.schema.json",
+  "title": "SisTer Subsystem Echo Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "value", "processed_by"],
+  "properties": {
+    "schema": {"const": "sister.subsystem.echo/1.0.0"},
+    "value": {"type": "string", "maxLength": 65536},
+    "processed_by": {"type": "string", "pattern": "^[a-z][a-z0-9_]{2,63}$"}
+  }
+}

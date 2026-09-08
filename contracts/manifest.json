@@ -1,0 +1,58 @@
+{
+  "schema": "sister.subsystem.manifest/1.0.0",
+  "system_id": "sister_image",
+  "name": "SisTer Image",
+  "version": "0.1.0",
+  "contract": "sister.subsystem/1.0.0",
+  "adapter_version": "1.0.0",
+  "mount_path": "/integrations/sister_image/",
+  "audience": "sister_image",
+  "transport": {
+    "http": true,
+    "websocket": false,
+    "internal_endpoint": "http://127.0.0.1:8096"
+  },
+  "technical_endpoints": {
+    "manifest": "/manifest",
+    "health": "/health",
+    "readiness": "/ready",
+    "capabilities": "/capabilities",
+    "identity": "/identity",
+    "echo": "/echo"
+  },
+  "capabilities": [
+    "image.regions.classify"
+  ],
+  "capability_offers": [
+    {
+      "capability": "image.regions.classify",
+      "method": "POST",
+      "endpoint": "/api/classify",
+      "input": {
+        "schema": "sister.image.classification/1.0.0",
+        "fields": [
+          "image",
+          "window",
+          "mode",
+          "classes",
+          "homogeneity",
+          "min_valid",
+          "ignore_zero",
+          "nodata"
+        ]
+      },
+      "output": {
+        "schema": "sister.image.job/1.0.0",
+        "fields": [
+          "id",
+          "status",
+          "configuration"
+        ]
+      },
+      "observable_success": "Tarefa concluida com mapa TIFF e relatorio contendo parametros e hashes SHA256 verificaveis"
+    }
+  ],
+  "data_ownership": "exclusive",
+  "audit_level": "domain_relevant_operations",
+  "production_eligible": false
+}

@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sister.local/contracts/subsystem/1.0.0/manifest.schema.json",
+  "title": "SisTer Subsystem Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "system_id",
+    "name",
+    "version",
+    "contract",
+    "adapter_version",
+    "mount_path",
+    "audience",
+    "transport",
+    "technical_endpoints",
+    "capabilities",
+    "capability_offers",
+    "data_ownership",
+    "audit_level",
+    "production_eligible"
+  ],
+  "properties": {
+    "schema": {"const": "sister.subsystem.manifest/1.0.0"},
+    "system_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{2,63}$"},
+    "name": {"type": "string", "minLength": 2, "maxLength": 80},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([-.][A-Za-z0-9.]+)?$"},
+    "contract": {"const": "sister.subsystem/1.0.0"},
+    "adapter_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([-.][A-Za-z0-9.]+)?$"},
+    "mount_path": {"type": "string", "pattern": "^/integrations/[a-z0-9_-]+/$"},
+    "audience": {"type": "string", "pattern": "^[a-z][a-z0-9_]{2,63}$"},
+    "transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["http", "websocket", "internal_endpoint"],
+      "properties": {
+        "http": {"type": "boolean"},
+        "websocket": {"type": "boolean"},
+        "internal_endpoint": {
+          "type": "string",
+          "pattern": "^https?://(127\\.0\\.0\\.1|localhost|10\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}|172\\.(1[6-9]|2[0-9]|3[0-1])\\.[0-9]{1,3}\\.[0-9]{1,3}|192\\.168\\.[0-9]{1,3}\\.[0-9]{1,3})(:[0-9]{2,5})?$"
+        }
+      }
+    },
+    "technical_endpoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest", "health", "readiness", "capabilities", "identity", "echo"],
+      "properties": {
+        "manifest": {"const": "/manifest"},
+        "health": {"const": "/health"},
+        "readiness": {"const": "/ready"},
+        "capabilities": {"const": "/capabilities"},
+        "identity": {"const": "/identity"},
+        "echo": {"const": "/echo"}
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"}
+    },
+    "capability_offers": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "capability",
+          "method",
+          "endpoint",
+          "input",
+          "output",
+          "observable_success"
+        ],
+        "properties": {
+          "capability": {"type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"},
+          "method": {"enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]},
+          "endpoint": {"type": "string", "pattern": "^/[A-Za-z0-9_./-]+$"},
+          "input": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["schema", "fields"],
+            "properties": {
+              "schema": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]+/[0-9]+\\.[0-9]+\\.[0-9]+$"},
+              "fields": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 100,
+                "uniqueItems": true,
+                "items": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
+              }
+            }
+          },
+          "output": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["schema", "fields"],
+            "properties": {
+              "schema": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]+/[0-9]+\\.[0-9]+\\.[0-9]+$"},
+              "fields": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 100,
+                "uniqueItems": true,
+                "items": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
+              }
+            }
+          },
+          "observable_success": {"type": "string", "minLength": 8, "maxLength": 500}
+        }
+      }
+    },
+    "data_ownership": {"enum": ["exclusive", "shared", "external_reference"]},
+    "audit_level": {"enum": ["technical_only", "domain_relevant_operations", "all_state_changes"]},
+    "production_eligible": {"type": "boolean"}
+  }
+}

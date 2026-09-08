@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sister.local/contracts/subsystem/1.0.0/readiness.schema.json",
+  "title": "SisTer Subsystem Readiness",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "system_id", "status", "contract_version", "manifest_digest", "dependencies", "degraded_capabilities"],
+  "properties": {
+    "schema": {"const": "sister.subsystem.readiness/1.0.0"},
+    "system_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{2,63}$"},
+    "status": {"enum": ["ready", "degraded", "not_ready"]},
+    "contract_version": {"const": "1.0.0"},
+    "manifest_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": {"enum": ["ready", "degraded", "unavailable"]},
+      "maxProperties": 30
+    },
+    "degraded_capabilities": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"}
+    }
+  }
+}

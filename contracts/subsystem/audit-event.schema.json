@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sister.local/contracts/subsystem/1.0.0/audit-event.schema.json",
+  "title": "SisTer Subsystem Audit Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "event_id", "occurred_at", "system_id", "actor", "action", "resource", "outcome"],
+  "properties": {
+    "schema": {"const": "sister.subsystem.audit-event/1.0.0"},
+    "event_id": {"type": "string", "minLength": 12, "maxLength": 120},
+    "occurred_at": {"type": "string", "format": "date-time"},
+    "system_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{2,63}$"},
+    "actor": {"type": "string", "minLength": 1, "maxLength": 120},
+    "action": {"type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"},
+    "resource": {"type": "string", "minLength": 1, "maxLength": 160},
+    "outcome": {"enum": ["allowed", "denied", "failed"]},
+    "request_id": {"type": "string", "minLength": 8, "maxLength": 120}
+  }
+}

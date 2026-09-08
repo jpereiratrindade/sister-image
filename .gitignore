@@ -1,0 +1,7 @@
+/build*/
+/data/
+*.log
+__pycache__/
+.env
+*.pem
+*.key

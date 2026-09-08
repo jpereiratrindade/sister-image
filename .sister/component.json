@@ -1,0 +1,45 @@
+{
+  "schema": "sister.component/1.0.0",
+  "component_id": "image",
+  "system_id": "sister_image",
+  "deployment_role": "system",
+  "semantic_contract": "sister.subsystem/1.0.0",
+  "interaction_surfaces": [
+    {
+      "surface_id": "image-classification",
+      "label": "Image",
+      "purpose": "Classificar regioes de imagens TIFF e GeoTIFF",
+      "path": "/",
+      "access_class": "research"
+    }
+  ],
+  "build": {
+    "driver": "cmake-ninja/1",
+    "source": ".",
+    "build_dir": "build",
+    "configuration": "Release",
+    "tests": {
+      "driver": "ctest/1"
+    },
+    "artifacts": [
+      {
+        "id": "image-http",
+        "path": "build/sister-image-http",
+        "executable": true
+      }
+    ]
+  },
+  "runtime": {
+    "schema": "sister.runtime/1.0.0",
+    "entrypoint": "scripts/runtime.sh",
+    "actions": [
+      "start",
+      "stop",
+      "restart",
+      "status",
+      "health",
+      "readiness"
+    ],
+    "state_policy": "persistent-external"
+  }
+}

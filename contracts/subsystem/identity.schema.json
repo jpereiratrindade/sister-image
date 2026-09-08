@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sister.local/contracts/subsystem/1.0.0/identity.schema.json",
+  "title": "SisTer Mediated Subsystem Identity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "subject", "name", "email", "role", "request_id", "origin"],
+  "properties": {
+    "schema": {"const": "sister.subsystem.identity/1.0.0"},
+    "subject": {"type": "string", "minLength": 1, "maxLength": 128},
+    "name": {"type": "string", "minLength": 1, "maxLength": 160},
+    "email": {"type": "string", "minLength": 3, "maxLength": 254},
+    "role": {"type": "string", "minLength": 1, "maxLength": 64},
+    "request_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "origin": {"const": "sisterd"}
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sister.local/contracts/subsystem/1.0.0/error.schema.json",
+  "title": "SisTer Subsystem Error",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "error", "message", "request_id"],
+  "properties": {
+    "schema": {"const": "sister.subsystem.error/1.0.0"},
+    "error": {"type": "string", "pattern": "^[a-z][a-z0-9_]{2,80}$"},
+    "message": {"type": "string", "minLength": 1, "maxLength": 240},
+    "request_id": {"type": "string", "minLength": 8, "maxLength": 120},
+    "retryable": {"type": "boolean"}
+  }
+}

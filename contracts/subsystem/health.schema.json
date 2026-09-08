@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sister.local/contracts/subsystem/1.0.0/health.schema.json",
+  "title": "SisTer Subsystem Health",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "system_id", "status", "checked_at"],
+  "properties": {
+    "schema": {"const": "sister.subsystem.health/1.0.0"},
+    "system_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{2,63}$"},
+    "status": {"enum": ["ok", "degraded", "unavailable"]},
+    "checked_at": {"type": "string", "format": "date-time"}
+  }
+}
