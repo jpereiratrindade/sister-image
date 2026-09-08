@@ -150,6 +150,41 @@ function updateWindowSpatialScale() {
   scaleEl.textContent = `Escala: ${winPx} px = ${totalMeters.toLocaleString()} m (${totalKm.toFixed(2)} km) × ${totalMeters.toLocaleString()} m | Área da Janela: ${areaHa.toFixed(2)} ha (Res. ${pixelMeters}m/px)`;
 }
 
+function formatRasterInfo(info) {
+  if (!info) return null;
+  const copy = { ...info };
+
+  const width = copy.width || copy.input_width || 10980;
+  const height = copy.height || copy.input_height || 10980;
+  if (copy.tie_x > 1000 && copy.scale_x > 0) {
+    const minX = copy.tie_x;
+    const maxY = copy.tie_y;
+    const maxX = minX + width * copy.scale_x;
+    const minY = maxY - height * copy.scale_y;
+    const zone = copy.zone || 22;
+    const southern = copy.southern !== false;
+
+    const c1 = utmToLatLon(minX, maxY, zone, southern);
+    const c2 = utmToLatLon(maxX, maxY, zone, southern);
+    const c3 = utmToLatLon(minX, minY, zone, southern);
+    const c4 = utmToLatLon(maxX, minY, zone, southern);
+    const lats = [c1.lat, c2.lat, c3.lat, c4.lat];
+    const lons = [c1.lon, c2.lon, c3.lon, c4.lon];
+
+    copy.width = width;
+    copy.height = height;
+    copy.latlon_bounds = [
+      Math.min(...lats), Math.min(...lons),
+      Math.max(...lats), Math.max(...lons)
+    ];
+
+    const areaSqKm = (width * copy.scale_x * height * copy.scale_y) / 1000000.0;
+    copy.area_sq_km = Math.round(areaSqKm * 10000) / 10000;
+    copy.area_ha = Math.round(areaSqKm * 10000) / 100;
+  }
+  return copy;
+}
+
 // Draw vector polygon outlines and point markers on canvas
 function drawVectorOverlay(ctx, width, height, geojson) {
   if (!geojson || !geojson.features || !geojson.features.length) return;
@@ -568,7 +603,7 @@ async function handleRasterInspect(file) {
     const headers = { 'X-File-Name': file.name };
     const response = await api('api/raster/inspect', { method: 'POST', headers, body: file });
     const data = await response.json();
-    currentRasterInfo = data.info;
+    currentRasterInfo = formatRasterInfo(data.info);
 
     if ($('r-dim')) $('r-dim').textContent = `${currentRasterInfo.width} × ${currentRasterInfo.height}`;
     if ($('r-spp')) $('r-spp').textContent = currentRasterInfo.channels;
@@ -651,7 +686,7 @@ async function executeSpatialClip() {
 async function showJobResults(job) {
   currentJob = job.id;
   if (job.result && job.result.raster_info) {
-    currentRasterInfo = job.result.raster_info;
+    currentRasterInfo = formatRasterInfo(job.result.raster_info);
   }
   if ($('state-badge')) $('state-badge').textContent = states[job.status] || job.status;
 
