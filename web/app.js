@@ -361,6 +361,15 @@ async function renderLeafletMap(geojson) {
     });
   }
 
+  if (!leafletInstance.getPane('rasterPane')) {
+    leafletInstance.createPane('rasterPane');
+    leafletInstance.getPane('rasterPane').style.zIndex = 200;
+  }
+  if (!leafletInstance.getPane('vectorPane')) {
+    leafletInstance.createPane('vectorPane');
+    leafletInstance.getPane('vectorPane').style.zIndex = 400;
+  }
+
   if (leafletGeoJsonLayer) {
     leafletInstance.removeLayer(leafletGeoJsonLayer);
     leafletGeoJsonLayer = null;
@@ -373,8 +382,10 @@ async function renderLeafletMap(geojson) {
 
   if (geojson && geojson.features && geojson.features.length) {
     leafletGeoJsonLayer = L.geoJSON(geojson, {
+      pane: 'vectorPane',
       style: { color: '#06b6d4', weight: 3.5, opacity: 0.95, fillColor: '#06b6d4', fillOpacity: 0.35 },
       pointToLayer: (feat, latlng) => L.circleMarker(latlng, {
+        pane: 'vectorPane',
         radius: 8, fillColor: '#06b6d4', color: '#ffffff', weight: 2, opacity: 1, fillOpacity: 0.9
       }),
       onEachFeature: (feat, layer) => {
@@ -422,7 +433,7 @@ async function renderLeafletMap(geojson) {
   if (currentJob && canvas && canvas.width > 0 && rasterLatLngBounds && rasterLatLngBounds.isValid && rasterLatLngBounds.isValid()) {
     try {
       const dataUrl = canvas.toDataURL('image/png');
-      leafletRasterOverlay = L.imageOverlay(dataUrl, rasterLatLngBounds, { opacity: 0.85 }).addTo(leafletInstance);
+      leafletRasterOverlay = L.imageOverlay(dataUrl, rasterLatLngBounds, { pane: 'rasterPane', opacity: 0.85 }).addTo(leafletInstance);
     } catch (e) {}
   }
 
