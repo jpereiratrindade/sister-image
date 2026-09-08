@@ -262,8 +262,9 @@ async function handleVectorUpload(file) {
 
   try {
     const isJson = file.name.endsWith('.json') || file.name.endsWith('.geojson');
-    const headers = isJson ? { 'Content-Type': 'application/json' } : {};
-    const response = await api('api/shapes/analyze', { method: 'POST', headers, body: file });
+    const headers = isJson ? { 'Content-Type': 'application/json' } : { 'X-File-Name': file.name };
+    const queryName = encodeURIComponent(file.name);
+    const response = await api(`api/shapes/analyze?name=${queryName}`, { method: 'POST', headers, body: file });
     const data = await response.json();
 
     currentGeoJSON = data.geojson;

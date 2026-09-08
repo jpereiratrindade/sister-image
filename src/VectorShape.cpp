@@ -141,7 +141,12 @@ nlohmann::json VectorShape::to_geojson() const {
     nlohmann::json features = nlohmann::json::array();
     for (const auto& poly : polygons) {
         if (poly.outer_ring.empty()) continue;
-        if (poly.outer_ring.size() == 1) {
+        std::size_t sz = poly.outer_ring.size();
+        bool is_closed = (sz >= 4 &&
+                          poly.outer_ring.front().x == poly.outer_ring.back().x &&
+                          poly.outer_ring.front().y == poly.outer_ring.back().y);
+
+        if (sz == 1) {
             features.push_back({
                 {"type", "Feature"},
                 {"geometry", {
@@ -150,7 +155,7 @@ nlohmann::json VectorShape::to_geojson() const {
                 }},
                 {"properties", nlohmann::json::object()}
             });
-        } else if (poly.outer_ring.size() == 2) {
+        } else if (!is_closed && poly.inner_rings.empty()) {
             nlohmann::json line = nlohmann::json::array();
             for (const auto& p : poly.outer_ring) {
                 line.push_back({p.x, p.y});
@@ -207,8 +212,12 @@ nlohmann::json VectorShape::to_metrics_json() const {
         total_points += sz;
         for (const auto& hole : poly.inner_rings) total_points += hole.size();
 
+        bool is_closed = (sz >= 4 &&
+                          poly.outer_ring.front().x == poly.outer_ring.back().x &&
+                          poly.outer_ring.front().y == poly.outer_ring.back().y);
+
         if (sz == 1) pt_count++;
-        else if (sz == 2) line_count++;
+        else if (!is_closed && poly.inner_rings.empty()) line_count++;
         else poly_count++;
 
         total_area += poly.area();
@@ -348,7 +357,12 @@ VectorShape VectorShape::parse_shp(const std::filesystem::path& path) {
         if (!file.read(record.data(), content_length)) break;
 
         int32_t shape_type = read_int32_le(record.data());
-        if (shape_type == 1) { // Point
+        bool is_point = (shape_type == 1 || shape_type == 11 || shape_type == 21);
+        bool is_multipoint = (shape_type == 8 || shape_type == 18 || shape_type == 28);
+        bool is_polyline_or_poly = (shape_type == 3 || shape_type == 13 || shape_type == 23 ||
+                                    shape_type == 5 || shape_type == 15 || shape_type == 25);
+
+        if (is_point) {
             if (content_length >= 20) {
                 double px = read_double_le(record.data() + 4);
                 double py = read_double_le(record.data() + 12);
@@ -357,7 +371,21 @@ VectorShape VectorShape::parse_shp(const std::filesystem::path& path) {
                 poly.compute_bounds();
                 shape.polygons.push_back(std::move(poly));
             }
-        } else if (shape_type == 5 || shape_type == 3) { // Polygon (5) or PolyLine (3)
+        } else if (is_multipoint) {
+            if (content_length >= 40) {
+                int32_t num_points = read_int32_le(record.data() + 36);
+                if (num_points > 0 && 40 + num_points * 16 <= content_length) {
+                    for (int p = 0; p < num_points; ++p) {
+                        double px = read_double_le(record.data() + 40 + p * 16);
+                        double py = read_double_le(record.data() + 40 + p * 16 + 8);
+                        Polygon2D poly;
+                        poly.outer_ring.push_back({px, py});
+                        poly.compute_bounds();
+                        shape.polygons.push_back(std::move(poly));
+                    }
+                }
+            }
+        } else if (is_polyline_or_poly) {
             if (content_length < 44) continue;
             int32_t num_parts = read_int32_le(record.data() + 36);
             int32_t num_points = read_int32_le(record.data() + 40);
@@ -375,6 +403,7 @@ VectorShape VectorShape::parse_shp(const std::filesystem::path& path) {
             for (int i = 0; i < num_parts; ++i) {
                 int32_t start_idx = parts[i];
                 int32_t end_idx = (i + 1 < num_parts) ? parts[i + 1] : num_points;
+                if (start_idx < 0 || end_idx > num_points || start_idx >= end_idx) continue;
                 Polygon2D poly;
                 for (int p = start_idx; p < end_idx; ++p) {
                     double px = read_double_le(record.data() + points_offset + p * 16);
@@ -486,6 +515,23 @@ VectorShape VectorShape::parse_kmz_or_zip(const std::filesystem::path& path) {
         if (!shape.polygons.empty()) return shape;
     }
 
+    // Try finding SHP header (9994 BE: 0x00 0x00 0x27 0x0a) inside ZIP content
+    std::string shp_magic = "\x00\x00\x27\x0a";
+    std::size_t shp_pos = content.find(shp_magic);
+    if (shp_pos != std::string::npos && shp_pos + 100 <= content.size()) {
+        std::filesystem::path temp_shp = path.parent_path() / (path.stem().string() + "_zip_inner.shp");
+        std::ofstream out(temp_shp, std::ios::binary);
+        out.write(content.data() + shp_pos, content.size() - shp_pos);
+        out.close();
+        try {
+            VectorShape shape = parse_shp(temp_shp);
+            std::filesystem::remove(temp_shp);
+            if (!shape.polygons.empty()) return shape;
+        } catch (...) {
+            std::filesystem::remove(temp_shp);
+        }
+    }
+
     throw std::runtime_error("Nenhum vetor valido encontrado no arquivo KMZ/ZIP: " + path.string());
 }
 
@@ -501,25 +547,43 @@ VectorShape VectorShape::parse_file(const std::filesystem::path& path) {
     }
 
     // Automatic format detection for temporary uploads or unknown file extensions (.tmp)
+    // 1. Check SHP magic header (9994 BE: 0x00 0x00 0x27 0x0a)
+    {
+        std::ifstream f(path, std::ios::binary);
+        char hdr[4];
+        if (f.read(hdr, 4)) {
+            if (static_cast<unsigned char>(hdr[0]) == 0x00 &&
+                static_cast<unsigned char>(hdr[1]) == 0x00 &&
+                static_cast<unsigned char>(hdr[2]) == 0x27 &&
+                static_cast<unsigned char>(hdr[3]) == 0x0a) {
+                return parse_shp(path);
+            }
+        }
+    }
+
+    // 2. Try SHP
+    try {
+        VectorShape shape = parse_shp(path);
+        if (!shape.polygons.empty()) return shape;
+    } catch (...) {}
+
+    // 3. Try KML
     try {
         VectorShape shape = parse_kml(path);
         if (!shape.polygons.empty()) return shape;
     } catch (...) {}
 
+    // 4. Try KMZ or ZIP containing SHP/KML
     try {
         VectorShape shape = parse_kmz_or_zip(path);
         if (!shape.polygons.empty()) return shape;
     } catch (...) {}
 
+    // 5. Try GeoJSON
     try {
         std::ifstream f(path);
         nlohmann::json j = nlohmann::json::parse(f);
         VectorShape shape = parse_geojson(j);
-        if (!shape.polygons.empty()) return shape;
-    } catch (...) {}
-
-    try {
-        VectorShape shape = parse_shp(path);
         if (!shape.polygons.empty()) return shape;
     } catch (...) {}
 

@@ -221,7 +221,10 @@ int main(int argc, char** argv) {
                 if (req.has_header("Content-Type") && req.get_header_value("Content-Type") == "application/json") {
                     shape = VectorShape::parse_geojson(Json::parse(req.body));
                 } else {
-                    const auto temp_path = root / ("temp_vector_" + identifier() + ".tmp");
+                    std::string fname = req.has_param("name") ? req.get_param_value("name") : (req.has_header("X-File-Name") ? req.get_header_value("X-File-Name") : "");
+                    std::string ext = fs::path(fname).extension().string();
+                    if (ext.empty()) ext = ".tmp";
+                    const auto temp_path = root / ("temp_vector_" + identifier() + ext);
                     std::ofstream temp(temp_path, std::ios::binary);
                     temp.write(req.body.data(), req.body.size());
                     temp.close();
@@ -243,7 +246,10 @@ int main(int argc, char** argv) {
                 if (req.has_header("Content-Type") && req.get_header_value("Content-Type") == "application/json") {
                     shape = VectorShape::parse_geojson(Json::parse(req.body));
                 } else {
-                    const auto temp_path = root / ("temp_vector_analyze_" + identifier() + ".tmp");
+                    std::string fname = req.has_param("name") ? req.get_param_value("name") : (req.has_header("X-File-Name") ? req.get_header_value("X-File-Name") : "");
+                    std::string ext = fs::path(fname).extension().string();
+                    if (ext.empty()) ext = ".tmp";
+                    const auto temp_path = root / ("temp_vector_analyze_" + identifier() + ext);
                     std::ofstream temp(temp_path, std::ios::binary);
                     temp.write(req.body.data(), req.body.size());
                     temp.close();
