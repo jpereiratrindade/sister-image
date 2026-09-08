@@ -395,6 +395,28 @@ canvas {
 
 [hidden] { display: none !important; }
 
+#leaflet-map {
+  width: 100%;
+  height: 560px;
+  min-height: 480px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: #0b1329;
+  z-index: 1;
+}
+
+.leaflet-container {
+  background: #0b1329 !important;
+  font-family: inherit;
+  border-radius: 8px;
+}
+
+.leaflet-popup-content-wrapper, .leaflet-popup-tip {
+  background: #141e33 !important;
+  color: #f8fafc !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+}
+
 @media (max-width: 1024px) {
   .widescreen-workspace { grid-template-columns: 1fr; }
   .viewport-card { min-height: 480px; }

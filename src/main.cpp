@@ -103,7 +103,7 @@ int main(int argc, char** argv) {
         server.set_write_timeout(30, 0);
         server.set_keep_alive_max_count(10);
         server.set_default_headers({{"X-Content-Type-Options", "nosniff"}, {"Referrer-Policy", "same-origin"},
-            {"Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; frame-ancestors 'self'; object-src 'none'; base-uri 'self'"}});
+            {"Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://*.tile.openstreetmap.org https://*.tile.org; frame-ancestors 'self'; object-src 'none'; base-uri 'self'"}});
         std::atomic<bool> busy{false};
         std::mutex state_mutex;
         std::thread worker;

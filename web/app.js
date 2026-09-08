@@ -176,9 +176,10 @@ function renderLeafletMap(geojson) {
   }
 
   if (!leafletInstance) {
-    leafletInstance = L.map('leaflet-map').setView([0, 0], 2);
+    leafletInstance = L.map('leaflet-map').setView([-14.235, -51.925], 4);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(leafletInstance);
   }
 
@@ -198,16 +199,21 @@ function renderLeafletMap(geojson) {
         layer.bindPopup(`<strong>Geometria Vetorial</strong><br>Tipo: ${type}`);
       }
     }).addTo(leafletInstance);
-
-    setTimeout(() => {
-      leafletInstance.invalidateSize();
-      try {
-        if (leafletGeoJsonLayer.getBounds().isValid()) {
-          leafletInstance.fitBounds(leafletGeoJsonLayer.getBounds(), { padding: [30, 30] });
-        }
-      } catch {}
-    }, 100);
   }
+
+  setTimeout(() => {
+    if (leafletInstance) {
+      leafletInstance.invalidateSize();
+      if (leafletGeoJsonLayer) {
+        try {
+          const bounds = leafletGeoJsonLayer.getBounds();
+          if (bounds && bounds.isValid()) {
+            leafletInstance.fitBounds(bounds, { padding: [40, 40] });
+          }
+        } catch (e) {}
+      }
+    }
+  }, 100);
 }
 
 async function updateView(mode) {
@@ -219,12 +225,8 @@ async function updateView(mode) {
   const canvas = $('viewport-canvas');
 
   if (mode === 'leaflet') {
-    if (!currentGeoJSON) {
-      statusMessage('Carregue um arquivo vetorial para visualizar no mapa Leaflet.', true);
-      return;
-    }
     renderLeafletMap(currentGeoJSON);
-    statusMessage('Exibindo mapa cartográfico interativo Leaflet.');
+    statusMessage(currentGeoJSON ? 'Exibindo mapa cartográfico interativo Leaflet.' : 'Mapa Leaflet pronto. Carregue um vetor para sobreposição.');
     return;
   }
 
