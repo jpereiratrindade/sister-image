@@ -86,20 +86,36 @@ void original_preview(const std::filesystem::path& source, const std::filesystem
     TIFFGetField(tif.get(), TIFFTAG_SAMPLESPERPIXEL, &spp);
     TIFFGetField(tif.get(), TIFFTAG_BITSPERSAMPLE, &bps);
 
+    if (spp == 0) spp = 1;
+    if (bps == 0) bps = 8;
+    std::size_t sample_bytes = bps / 8;
+    if (sample_bytes == 0) sample_bytes = 1;
+
     const auto step = std::max<std::uint32_t>(1, (std::max(width, height) + 1023) / 1024);
     const auto pw = (width + step - 1) / step, ph = (height + step - 1) / step;
     std::ofstream out(dest, std::ios::binary);
     out << "P5\n" << pw << ' ' << ph << "\n255\n";
-    std::vector<unsigned char> row(width * spp), small(pw);
+    std::vector<unsigned char> row(width * spp * sample_bytes);
+    std::vector<unsigned char> small(pw);
     for (std::uint32_t y = 0; y < height; ++y) {
         if (TIFFReadScanline(tif.get(), row.data(), y) < 0) throw std::runtime_error("Falha lendo scanline da imagem original");
         if (y % step) continue;
         for (std::uint32_t x = 0; x < pw; ++x) {
-            std::size_t idx = (x * step) * spp;
-            if (spp >= 3) {
-                small[x] = static_cast<unsigned char>(0.299 * row[idx] + 0.587 * row[idx + 1] + 0.114 * row[idx + 2]);
+            std::size_t sample_idx = (x * step) * spp;
+            if (sample_bytes == 2) {
+                const uint16_t* u16 = reinterpret_cast<const uint16_t*>(row.data());
+                if (spp >= 3) {
+                    double val = 0.299 * u16[sample_idx] + 0.587 * u16[sample_idx + 1] + 0.114 * u16[sample_idx + 2];
+                    small[x] = static_cast<unsigned char>(std::clamp(val / 256.0, 0.0, 255.0));
+                } else {
+                    small[x] = static_cast<unsigned char>(std::clamp(static_cast<double>(u16[sample_idx]) / 256.0, 0.0, 255.0));
+                }
             } else {
-                small[x] = row[idx];
+                if (spp >= 3) {
+                    small[x] = static_cast<unsigned char>(0.299 * row[sample_idx] + 0.587 * row[sample_idx + 1] + 0.114 * row[sample_idx + 2]);
+                } else {
+                    small[x] = row[sample_idx];
+                }
             }
         }
         out.write(reinterpret_cast<const char*>(small.data()), small.size());

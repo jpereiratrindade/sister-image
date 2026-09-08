@@ -157,6 +157,7 @@ function renderStandaloneVector(geojson) {
 
 let leafletInstance = null;
 let leafletGeoJsonLayer = null;
+let leafletRasterOverlay = null;
 
 function renderLeafletMap(geojson) {
   const container = $('leaflet-map');
@@ -233,6 +234,11 @@ function renderLeafletMap(geojson) {
     leafletGeoJsonLayer = null;
   }
 
+  if (leafletRasterOverlay) {
+    leafletInstance.removeLayer(leafletRasterOverlay);
+    leafletRasterOverlay = null;
+  }
+
   if (geojson && geojson.features && geojson.features.length) {
     leafletGeoJsonLayer = L.geoJSON(geojson, {
       style: { color: '#06b6d4', weight: 3.5, opacity: 0.95, fillColor: '#06b6d4', fillOpacity: 0.35 },
@@ -254,6 +260,16 @@ function renderLeafletMap(geojson) {
         layer.bindPopup(popupText);
       }
     }).addTo(leafletInstance);
+  }
+
+  if (currentJob && canvas && canvas.width > 0 && leafletGeoJsonLayer) {
+    try {
+      const bounds = leafletGeoJsonLayer.getBounds();
+      if (bounds && bounds.isValid()) {
+        const dataUrl = canvas.toDataURL('image/png');
+        leafletRasterOverlay = L.imageOverlay(dataUrl, bounds, { opacity: 0.85 }).addTo(leafletInstance);
+      }
+    } catch (e) {}
   }
 
   setTimeout(() => {
@@ -513,16 +529,16 @@ async function refreshJobs() {
   }
 }
 
-async function submitClassification(demo = false) {
+async function submitClassification(demo = false, customFile = null) {
   if (!demo && $('classify-form') && !$('classify-form').reportValidity()) return;
-  const file = $('classify-file') ? $('classify-file').files[0] : null;
+  const file = customFile || ($('classify-file') ? $('classify-file').files[0] : null);
   if (!demo && !file) { statusMessage('Escolha uma imagem TIFF ou Sentinel JP2 para classificar.', true); return; }
 
   setWorking(true);
   if ($('result-bar')) $('result-bar').hidden = true;
   if ($('viewport-canvas')) $('viewport-canvas').hidden = true;
   if ($('viewport-empty')) $('viewport-empty').hidden = false;
-  statusMessage(demo ? 'Executando demonstração sintética…' : `Enviando imagem ${file ? file.name : ''}…`);
+  statusMessage(demo ? 'Executando demonstração sintética…' : `Enviando e processando imagem ${file ? file.name : ''}…`);
   if ($('state-badge')) $('state-badge').textContent = 'Enviando';
 
   try {
@@ -533,7 +549,8 @@ async function submitClassification(demo = false) {
       headers,
       body: demo ? null : file
     });
-    await showJobResults(await response.json());
+    const jobData = await response.json();
+    await showJobResults(jobData);
     await refreshJobs();
   } catch (e) { setWorking(false); statusMessage(e.message, true); }
 }
@@ -561,10 +578,21 @@ if ($('v-leaflet')) $('v-leaflet').onclick = () => updateView('leaflet');
 if ($('v-clipped')) $('v-clipped').onclick = () => updateView('clipped');
 
 if ($('vector-file')) $('vector-file').onchange = () => handleVectorUpload($('vector-file').files[0]);
-if ($('raster-file')) $('raster-file').onchange = () => handleRasterInspect($('raster-file').files[0]);
+if ($('raster-file')) $('raster-file').onchange = () => {
+  const file = $('raster-file').files[0];
+  if (file) {
+    handleRasterInspect(file);
+    submitClassification(false, file);
+  }
+};
 
 if ($('classify-file')) $('classify-file').onchange = () => {
-  if ($('classify-filename')) $('classify-filename').textContent = $('classify-file').files[0]?.name || 'Escolha a Imagem TIFF';
+  const file = $('classify-file').files[0];
+  if (file) {
+    if ($('classify-filename')) $('classify-filename').textContent = file.name;
+    handleRasterInspect(file);
+    submitClassification(false, file);
+  }
 };
 
 if ($('classify-form')) $('classify-form').onsubmit = e => { e.preventDefault(); submitClassification(); };
